@@ -136,6 +136,8 @@ pkgs.mkShell rec {
         --setenv PATH "$newPath" \
         --ro-bind $TMP_PASSWD /etc/passwd \
         --ro-bind $TMP_GROUP /etc/group \
+        --ro-bind $HOME/.gitconfig $HOME/.gitconfig \
+        --ro-bind $HOME/.git-credentials $HOME/.git-credentials \
         ${pkgs.fish}/bin/fish
     }
 
