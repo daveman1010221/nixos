@@ -94,53 +94,49 @@ pkgs.mkShell rec {
         all_ro_bind_options+="$ro_bind_options_for_package"
     done
 
-    function run {
-      # Define UID and GID for creating temporary passwd and group files
-      mUID=$(id -u)
-      mGID=$(id -g)
+    # Define UID and GID for creating temporary passwd and group files
+    mUID=$(id -u)
+    mGID=$(id -g)
 
-      # Create temporary files for passwd and group
-      TMP_PASSWD=$(mktemp)
-      TMP_GROUP=$(mktemp)
+    # Create temporary files for passwd and group
+    TMP_PASSWD=$(mktemp)
+    TMP_GROUP=$(mktemp)
 
-      # Populate files with necessary content
-      getent passwd $mUID 65534 > $TMP_PASSWD
-      getent group $mGID 65534 > $TMP_GROUP
-      local newPath="${pkgs.getent}/bin:${pkgs.neovim}/bin:${pkgs.fish}/bin:${pkgs.bubblewrap}/bin:${pkgs.coreutils}/bin:/bin:/usr/bin:${pkgs.nix}/bin:${pkgs.rustup}/bin:${pkgs.openssl}/bin:${pkgs.iputils}/bin:${pkgs.iproute}/bin:${pkgs.tree}/bin:${pkgs.llvmPackages_16.bintools}/bin:${pkgs.llvmPackages_16.stdenv}/bin:${pkgs.clang_16}/bin:${pkgs.git}/bin"
-      bwrap \
-        --dir /tmp \
-        --proc /proc \
-        --dev /dev \
-        --chdir ${projectDir} \
-        --bind ${projectDir} ${projectDir} \
-        $all_ro_bind_options \
-        --ro-bind /etc/resolv.conf /etc/resolv.conf \
-        --dir /etc/static/ssl/certs \
-        --symlink ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt /etc/static/ssl/certs/ca-bundle.crt \
-        --symlink ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt /etc/static/ssl/certs/ca-certificates.crt \
-        --ro-bind ${pkgs.cacert.p11kit} ${pkgs.cacert.p11kit} \
-        --symlink ${pkgs.cacert.p11kit} /etc/static/ssl/trust-source \
-        --dir /etc/ssl/certs \
-        --symlink /etc/static/ssl/certs/ca-bundle.crt /etc/ssl/certs/ca-bundle.crt \
-        --symlink /etc/static/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt \
-        --symlink /etc/static/ssl/trust-source /etc/ssl/trust-source \
-        --setenv SSL_CERT_FILE "/etc/ssl/certs/ca-certificates.crt" \
-        --setenv SSL_CERT_DIR "/etc/ssl/certs" \
-        --unshare-all \
-        --share-net \
-        --die-with-parent \
-        --dir /run/user/$(id -u) \
-        --setenv XDG_RUNTIME_DIR "/run/user/$(id -u)" \
-        --setenv PS1 "bwrap-demo\$ " \
-        --setenv TERM "screen-256color" \
-        --setenv PATH "$newPath" \
-        --ro-bind $TMP_PASSWD /etc/passwd \
-        --ro-bind $TMP_GROUP /etc/group \
-        --ro-bind $HOME/.gitconfig $HOME/.gitconfig \
-        --ro-bind $HOME/.git-credentials $HOME/.git-credentials \
-        ${pkgs.fish}/bin/fish
-    }
-
-    echo "Sandboxed environment initialized. Use 'run' to launch a sandboxed fish shell."
+    # Populate files with necessary content
+    getent passwd $mUID 65534 > $TMP_PASSWD
+    getent group $mGID 65534 > $TMP_GROUP
+    local newPath="${pkgs.getent}/bin:${pkgs.neovim}/bin:${pkgs.fish}/bin:${pkgs.bubblewrap}/bin:${pkgs.coreutils}/bin:/bin:/usr/bin:${pkgs.nix}/bin:${pkgs.rustup}/bin:${pkgs.openssl}/bin:${pkgs.iputils}/bin:${pkgs.iproute}/bin:${pkgs.tree}/bin:${pkgs.llvmPackages_16.bintools}/bin:${pkgs.llvmPackages_16.stdenv}/bin:${pkgs.clang_16}/bin:${pkgs.git}/bin"
+    bwrap \
+      --dir /tmp \
+      --proc /proc \
+      --dev /dev \
+      --chdir ${projectDir} \
+      --bind ${projectDir} ${projectDir} \
+      $all_ro_bind_options \
+      --ro-bind /etc/resolv.conf /etc/resolv.conf \
+      --dir /etc/static/ssl/certs \
+      --symlink ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt /etc/static/ssl/certs/ca-bundle.crt \
+      --symlink ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt /etc/static/ssl/certs/ca-certificates.crt \
+      --ro-bind ${pkgs.cacert.p11kit} ${pkgs.cacert.p11kit} \
+      --symlink ${pkgs.cacert.p11kit} /etc/static/ssl/trust-source \
+      --dir /etc/ssl/certs \
+      --symlink /etc/static/ssl/certs/ca-bundle.crt /etc/ssl/certs/ca-bundle.crt \
+      --symlink /etc/static/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt \
+      --symlink /etc/static/ssl/trust-source /etc/ssl/trust-source \
+      --setenv SSL_CERT_FILE "/etc/ssl/certs/ca-certificates.crt" \
+      --setenv SSL_CERT_DIR "/etc/ssl/certs" \
+      --unshare-all \
+      --share-net \
+      --die-with-parent \
+      --dir /run/user/$(id -u) \
+      --setenv XDG_RUNTIME_DIR "/run/user/$(id -u)" \
+      --setenv PS1 "bwrap-demo\$ " \
+      --setenv TERM "screen-256color" \
+      --setenv PATH "$newPath" \
+      --ro-bind $TMP_PASSWD /etc/passwd \
+      --ro-bind $TMP_GROUP /etc/group \
+      --ro-bind $HOME/.gitconfig $HOME/.gitconfig \
+      --ro-bind $HOME/.git-credentials $HOME/.git-credentials \
+      ${pkgs.fish}/bin/fish
   '';
 }
