@@ -1,17 +1,17 @@
 { pkgs ? import <nixpkgs> {} }:
 let
-  overrides = (builtins.fromTOML (builtins.readFile ./rust-toolchain.toml));
-  libPath = with pkgs; lib.makeLibraryPath [
-    # libraries required for your project
-  ];
-
-  projectDir = "/home/djshepard/Documents/projects/codes/rust/nixos/";
+  userHome = builtins.getEnv "HOME";
+  projectRoot = "/Documents/projects";
+  projectDir = "${userHome}${projectRoot}/codes/rust/nixos/";
 in
 pkgs.mkShell rec {
   buildInputs = with pkgs; [
+    binutils
     bubblewrap
+    cargo
     clang_latest
-    coreutils
+    clippy
+    deterministic-uname
     fish
     fishPlugins.bass.src
     fishPlugins.bobthefish.src
@@ -19,7 +19,6 @@ pkgs.mkShell rec {
     fishPlugins.grc.src
     getent
     git
-    glib
     grc
     iproute
     iputils
@@ -28,8 +27,10 @@ pkgs.mkShell rec {
     neovim
     nix
     openssl
-    rustup
+    rustc
+    rustfmt
     util-linux
+    uutils-coreutils-noprefix
   ];
 
   RUSTC_VERSION = overrides.toolchain.channel;
@@ -50,47 +51,79 @@ pkgs.mkShell rec {
       ''-I${pkgs.glib.out}/lib/glib-2.0/include/''
     ];
 
+  # Certain Rust tools won't work without this
+  # This can also be fixed by using oxalica/rust-overlay and specifying the rust-src extension
+  # See https://discourse.nixos.org/t/rust-src-not-found-and-other-misadventures-of-developing-rust-on-nixos/11570/3?u=samuela. for more details.
+  RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
+
   shellHook = ''
+    # The '--pure' flag to 'nix-shell' sets this variable to an invalid path
+    # and it breaks SSL. The variable doesn't exist at all in an impure shell.
+    # I do not know why they do this. The safest fix I've discovered is to set
+    # this to a valid path.
     export NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
 
-    # Initialize a global variable to accumulate all ro_bind_options
+    # Accumulate all ro_bind_options, collected from the various package derivations.
     all_ro_bind_options=""
 
-    # Function to generate --ro-bind options for a given package
-    generate_ro_bind_options() {
+    # The derivations for all packages listed here will be expanded and added
+    # to the set of read-only bind mounts for the bubble wrap sandbox.
+    # Additionally, we will try to use this to add items to the PATH.
+
+    package_paths=(
+        "${pkgs.binutils}"
+        "${pkgs.bubblewrap}"
+        "${pkgs.cacert}"
+        "${pkgs.cargo}"
+        "${pkgs.clang_latest}"
+        "${pkgs.clippy}"
+        "${pkgs.deterministic-uname}"
+        "${pkgs.fish}"
+        "${pkgs.fishPlugins.bass.src}"
+        "${pkgs.fishPlugins.bobthefish.src}"
+        "${pkgs.fishPlugins.foreign-env.src}"
+        "${pkgs.fishPlugins.grc.src}"
+        "${pkgs.getent}"
+        "${pkgs.git}"
+        "${pkgs.grc}"
+        "${pkgs.iproute}"
+        "${pkgs.iputils}"
+        "${pkgs.llvmPackages_latest.bintools}"
+        "${pkgs.llvmPackages_latest.stdenv}"
+        "${pkgs.neovim}"
+        "${pkgs.nix}"
+        "${pkgs.openssl}"
+        "${pkgs.rustc}"
+        "${pkgs.rustfmt}"
+        "${pkgs.tree}"
+        "${pkgs.util-linux}"
+        "${pkgs.uutils-coreutils-noprefix}"
+    )
+
+    # This newPath will be used as PATH in the sandbox.
+    newPath=""
+
+    # Generate --ro-bind options for a given package
+    generate_ro_bind_options_and_update_path() {
       local package_path="$1"
       local ro_bind_options=""
 
-      # Query the requisites of the package and generate ro_bind options
+      # Query the requisites of a given package and generate ro_bind options.
+      # Note that this isn't 'pure', unless you pin your package versions,
+      # which is probably a good idea, but maybe not initially.
       for path in $(nix-store --query --requisites "$package_path"); do
         ro_bind_options+="--ro-bind $path $path "
+
+        # Use the package paths to build the newPath.
+        newPath+="$path/bin:"
       done
 
       echo "$ro_bind_options"
     }
 
-    echo "Sandboxed environment initialized. Use 'run' to launch a sandboxed fish shell."
-    package_paths=(
-        "${pkgs.bubblewrap}"
-        "${pkgs.cacert}"
-        "${pkgs.coreutils}"
-        "${pkgs.fish}"
-        "${pkgs.getent}"
-        "${pkgs.iputils}"
-        "${pkgs.iproute}"
-        "${pkgs.neovim}"
-        "${pkgs.nix}"
-        "${pkgs.openssl}"
-        "${pkgs.rustup}"
-        "${pkgs.tree}"
-        "${pkgs.llvmPackages_16.bintools}"
-        "${pkgs.llvmPackages_16.stdenv}"
-        "${pkgs.clang_16}"
-        "${pkgs.git}"
-    )
-
-    for package_path in "''${package_paths[@]}"; do
-        ro_bind_options_for_package=$(generate_ro_bind_options "$package_path")
+    for path in "''${package_paths[@]}"; do
+        # Add package derivations to the full set of ro-bind options for bwrap.
+        ro_bind_options_for_package=$(generate_ro_bind_options_and_update_path "$path")
         all_ro_bind_options+="$ro_bind_options_for_package"
     done
 
@@ -102,11 +135,17 @@ pkgs.mkShell rec {
     TMP_PASSWD=$(mktemp)
     TMP_GROUP=$(mktemp)
 
-    # Populate files with necessary content
+    # Create /etc/passwd and /etc/group files with the current user's UID/GID, and the nobody user.
     getent passwd $mUID 65534 > $TMP_PASSWD
     getent group $mGID 65534 > $TMP_GROUP
 
-    local newPath="${pkgs.getent}/bin:${pkgs.neovim}/bin:${pkgs.fish}/bin:${pkgs.bubblewrap}/bin:${pkgs.coreutils}/bin:/bin:/usr/bin:${pkgs.nix}/bin:${pkgs.rustup}/bin:${pkgs.openssl}/bin:${pkgs.iputils}/bin:${pkgs.iproute}/bin:${pkgs.tree}/bin:${pkgs.llvmPackages_16.bintools}/bin:${pkgs.llvmPackages_16.stdenv}/bin:${pkgs.clang_16}/bin:${pkgs.git}/bin"
+    # It's time to create the sandbox and launch the shell as a default action.
+    # The SSL stuff is insane and it has to be done this way. This took hours
+    # to figure out. Most everything else that is getting set is fairly
+    # obvious. I don't think the order of the arguments matters, since bwrap
+    # probably has to do these things in a deterministic order anyway, but the
+    # order you see the operations here is roughly the order that things need
+    # to happen.
 
     bwrap \
       --dir /tmp \
@@ -132,7 +171,7 @@ pkgs.mkShell rec {
       --die-with-parent \
       --dir /run/user/$(id -u) \
       --setenv XDG_RUNTIME_DIR "/run/user/$(id -u)" \
-      --setenv PS1 "bwrap-demo\$ " \
+      --setenv PS1 "rust-dev\$ " \
       --setenv TERM "screen-256color" \
       --setenv PATH "$newPath" \
       --ro-bind $TMP_PASSWD /etc/passwd \
