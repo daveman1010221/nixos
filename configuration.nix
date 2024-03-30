@@ -429,6 +429,7 @@ in
   environment.systemPackages = with pkgs; [
     babelfish
     bat
+    btop
     cowsay
     cryptsetup
     delta
@@ -450,7 +451,8 @@ in
     fishPlugins.grc.src
     fortune
     fzf
-    git
+    gitFull
+    git-up
     gnome.adwaita-icon-theme
     gnome.dconf-editor
     gnomeExtensions.applications-menu
@@ -518,6 +520,7 @@ in
     llvmPackages_16.clangUseLLVM
     llvmPackages_16.libunwind
     lolcat
+    #lorri
     lvm2 # Provides LVM tools: pvcreate, vgcreate, lvcreate
     mdadm # RAID management
     mlocate
@@ -539,6 +542,7 @@ in
     terminus-nerdfont
     tmux
     tree
+    yaru-theme
     wasmer
     wasmer-pack
     wget
@@ -569,30 +573,22 @@ in
       # Modesetting is required.
       modesetting.enable = true;
 
-      # Nvidia power management. Experimental, and can cause sleep/suspend to fail.
-      # Enable this if you have graphical corruption issues or application crashes after waking
-      # up from sleep. This fixes it by saving the entire VRAM memory to /tmp/ instead 
-      # of just the bare essentials.
+      # Nvidia power management. Experimental, and can cause sleep/suspend to
+      # fail. Enable this if you have graphical corruption issues or
+      # application crashes after waking up from sleep. This fixes it by saving
+      # the entire VRAM memory to /tmp/ instead of just the bare essentials.
       powerManagement.enable = false;
 
       # Fine-grained power management. Turns off GPU when not in use.
       # Experimental and only works on modern Nvidia GPUs (Turing or newer).
       powerManagement.finegrained = false;
 
-      # Use the NVidia open source kernel module (not to be confused with the
-      # independent third-party "nouveau" open source driver).
-      # Support is limited to the Turing and later architectures. Full list of 
-      # supported GPUs is at: 
-      # https://github.com/NVIDIA/open-gpu-kernel-modules#compatible-gpus 
-      # Only available from driver 515.43.04+
-      # Currently alpha-quality/buggy, so false is currently the recommended setting.
-      open = false;
-
       # Enable the Nvidia settings menu,
 	  # accessible via `nvidia-settings`.
       nvidiaSettings = true;
 
-      # Optionally, you may need to select the appropriate driver version for your specific GPU.
+      # Optionally, you may need to select the appropriate driver version for
+      # your specific GPU.
       package = config.boot.kernelPackages.nvidiaPackages.stable;
     };
 
@@ -1472,7 +1468,7 @@ set -gx LS_COLORS 'rs=0:di=00;34:ln=00;36:mh=00:pi=40;33:so=00;35:do=00;35:bd=40
 set -gx BROWSER /etc/profiles/per-user/djshepard/bin/firefox
 
 # For Lorri projects.
-eval (direnv hook fish)
+#direnv hook fish | source
 
 # For Home Manager
 # TODO: Figure out why setting this hangs the shell.
@@ -1528,6 +1524,13 @@ function rgk
     rg --hyperlink-format=kitty $argv
 end
       '';
+    };
+
+    git = {
+        enable = true;
+        lfs.enable = true;
+        package = "${pkgs.gitFull}";
+        #prompt.enable = true;
     };
 
     gnome-terminal.enable = true;
@@ -1656,6 +1659,8 @@ end
       tracker.enable = true;
       tracker-miners.enable = true;
     };
+
+    #lorri.enable = true;
 
     # Configure GNOME desktop environment with GDM3 display manager
     xserver = {
@@ -1924,13 +1929,47 @@ end
     }
   ];
 
+  system.activationScripts.userGitConfig = let
+    userGitConfigs = [
+      { user = "djshepard"; name = "David Shepard"; email = "daveman1010220@gmail.com"; }
+      # Add additional users as needed
+    ];
+    createGitConfigScript = userConfig: ''
+      # Check if .gitconfig exists for user ${userConfig.user}
+      if [ ! -f /home/${userConfig.user}/.gitconfig ]; then
+        echo "Creating .gitconfig for ${userConfig.user}"
+        cat > /home/${userConfig.user}/.gitconfig <<EOF
+[user]
+  name = ${userConfig.name}
+  email = ${userConfig.email}
+[init]
+  defaultBranch = main
+[credential]
+  helper = store
+EOF
+        # Ensure the file ownership is correct
+        chown ${userConfig.user} /home/${userConfig.user}/.gitconfig
+        echo "********* Remember to create your ~/.git-credentials file with your token *********"
+      else
+        echo ".gitconfig already exists for ${userConfig.user}, skipping..."
+      fi
+    '';
+  in {
+    text = lib.concatMapStringsSep "\n" createGitConfigScript userGitConfigs;
+    deps = [ ];
+  };
 
   # Set timezone to US Eastern Standard Time
   time.timeZone = "America/New_York";
 
+  users.mutableUsers = true;
+
   # Define a user account. Don't forget to set a password with ‘passwd’.
   users.users.djshepard = {
     isNormalUser = true;
+
+    # 'mkpasswd'
+    hashedPassword = ''$y$j9T$TsZjcgKr0u3TvD1.0de.W/$c/utzJh2Mkg.B38JKR7f3rQprgZ.RwNvUaoGfE/OD8D'';
     extraGroups = [ "wheel" "mlocate" ]; # Enable ‘sudo’ for the user.
     shell = pkgs.fish;
   };
