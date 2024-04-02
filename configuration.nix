@@ -254,8 +254,9 @@ in
     ];
 
     nix = {
+      package = pkgs.nixFlakes;
       extraOptions = ''
-        experimental-features = nix-command
+        experimental-features = nix-command flakes
       '';
     };
 
@@ -441,7 +442,9 @@ in
     efibootmgr
     efitools
     efivar
+    eza
     fd
+    file
     findutils
     firefox
     fish
@@ -450,6 +453,7 @@ in
     fishPlugins.foreign-env.src
     fishPlugins.grc.src
     fortune
+    fwupd-efi
     fzf
     gitFull
     git-up
@@ -465,6 +469,7 @@ in
     gnomeExtensions.window-list
     gnome.file-roller
     gnome.gdm
+    gnome.gpaste
     gnome.gnome-applets
     gnome.gnome-autoar
     gnome.gnome-backgrounds
@@ -538,14 +543,30 @@ in
     python312Full
     python312Packages.jsonschema
     ripgrep
+    signal-desktop-beta
     sqlite
     terminus-nerdfont
     tmux
     tree
-    yaru-theme
+    (vscode-with-extensions.override {
+      vscodeExtensions = with vscode-extensions; [
+        bbenoist.nix
+        ms-python.python
+        ms-azuretools.vscode-docker
+        ms-vscode-remote.remote-ssh
+      ] ++ pkgs.vscode-utils.extensionsFromVscodeMarketplace [
+        {
+          name = "remote-ssh-edit";
+          publisher = "ms-vscode-remote";
+          version = "0.47.2";
+          sha256 = "1hp6gjh4xp2m1xlm1jsdzxw9d8frkiidhph6nvl24d0h8z34w49g";
+        }
+      ];
+    })
     wasmer
     wasmer-pack
     wget
+    yaru-theme
   ];
 
   fileSystems = {
@@ -611,6 +632,8 @@ in
   };
 
   networking = {
+    hostName = "Servalws";
+
     # List services that you want to enable:
     firewall.enable = false;
 
@@ -1061,8 +1084,11 @@ function lol_fig --description="lolcat inside a figlet"
     echo $argv | figlet | lolcat -f | cat
 end
 
-function lh --description="ls -alh, so you don't have to."
-    grc ls -alh --color $argv
+#function lh --description="ls -alh, so you don't have to."
+    #grc ls -alh --color $argv
+#end
+function lh --description="Uses eza, a replacement for ls, with some useful options as defaults."
+    eza --group --header --group-directories-first --long --icons --git --all --binary --dereference --links --total-size $argv
 end
 
 function mac_generate --description="Generate valid MAC addresses, quickly. If an argument is provided, it must be one of: arista aruba cisco dell emc extreme_networks hp juniper riverbed vmware. The argument controls the vendor prefix portion of the generated MAC."
@@ -1465,6 +1491,8 @@ set -gx fish_key_bindings fish_vi_key_bindings
 
 set -gx LS_COLORS 'rs=0:di=00;34:ln=00;36:mh=00:pi=40;33:so=00;35:do=00;35:bd=40;33;00:cd=40;33;00:or=40;31;00:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=38;5;196:*.yaml=38;5;226:*.yml=38;5;226:*.json=38;5;226:*.csv=38;5;226:*.tar=38;5;207:*.tgz=38;5;207:*.arc=38;5;207:*.arj=38;5;207:*.taz=38;5;207:*.lha=38;5;207:*.lz4=38;5;207:*.lzh=38;5;207:*.lzma=38;5;207:*.tlz=38;5;207:*.txz=38;5;207:*.tzo=38;5;207:*.t7z=38;5;207:*.zip=38;5;207:*.z=38;5;207:*.dz=38;5;207:*.gz=38;5;207:*.lrz=38;5;207:*.lz=38;5;207:*.lzo=38;5;207:*.xz=38;5;207:*.zst=38;5;207:*.tzst=38;5;207:*.bz2=38;5;207:*.bz=38;5;207:*.tbz=38;5;207:*.tbz2=38;5;207:*.tz=38;5;207:*.deb=38;5;207:*.rpm=38;5;207:*.jar=38;5;207:*.war=38;5;207:*.ear=38;5;207:*.sar=38;5;207:*.rar=38;5;207:*.alz=38;5;207:*.ace=38;5;207:*.zoo=38;5;207:*.cpio=38;5;207:*.7z=38;5;207:*.rz=38;5;207:*.cab=38;5;207:*.wim=38;5;207:*.swm=38;5;207:*.dwm=38;5;207:*.esd=38;5;207:*.jpg=00;35:*.jpeg=00;35:*.mjpg=00;35:*.mjpeg=00;35:*.gif=00;35:*.bmp=00;35:*.pbm=00;35:*.pgm=00;35:*.ppm=00;35:*.tga=00;35:*.xbm=00;35:*.xpm=00;35:*.tif=00;35:*.tiff=00;35:*.png=00;35:*.svg=00;35:*.svgz=00;35:*.mng=00;35:*.pcx=00;35:*.mov=00;35:*.mpg=00;35:*.mpeg=00;35:*.m2v=00;35:*.mkv=00;35:*.webm=00;35:*.webp=00;35:*.ogm=00;35:*.mp4=00;35:*.m4v=00;35:*.mp4v=00;35:*.vob=00;35:*.qt=00;35:*.nuv=00;35:*.wmv=00;35:*.asf=00;35:*.rm=00;35:*.rmvb=00;35:*.flc=00;35:*.avi=00;35:*.fli=00;35:*.flv=00;35:*.gl=00;35:*.dl=00;35:*.xcf=00;35:*.xwd=00;35:*.yuv=00;35:*.cgm=00;35:*.emf=00;35:*.ogv=00;35:*.ogx=00;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:'
 
+set -gx EZA_COLORS '*.tar=38;5;203:*.tgz=38;5;203:*.arc=38;5;203:*.arj=38;5;203:*.taz=38;5;203:*.lha=38;5;203:*.lz4=38;5;203:*.lzh=38;5;203:*.lzma=38;5;203:*.tlz=38;5;203:*.txz=38;5;203:*.tzo=38;5;203:*.t7z=38;5;203:*.zip=38;5;203:*.z=38;5;203:*.dz=38;5;203:*.gz=38;5;203:*.lrz=38;5;203:*.lz=38;5;203:*.lzo=38;5;203:*.xz=38;5;203:*.zst=38;5;203:*.tzst=38;5;203:*.bz2=38;5;203:*.bz=38;5;203:*.tbz=38;5;203:*.tbz2=38;5;203:*.tz=38;5;203:*.deb=38;5;203:*.rpm=38;5;203:*.jar=38;5;203:*.war=38;5;203:*.ear=38;5;203:*.sar=38;5;203:*.rar=38;5;203:*.alz=38;5;203:*.ace=38;5;203:*.zoo=38;5;203:*.cpio=38;5;203:*.7z=38;5;203:*.rz=38;5;203:*.cab=38;5;203:*.wim=38;5;203:*.swm=38;5;203:*.dwm=38;5;203:*.esd=38;5;203:*.doc=38;5;109:*.docx=38;5;109:*.pdf=38;5;109:*.txt=38;5;109:*.md=38;5;109:*.rtf=38;5;109:*.odt=38;5;109:*.yaml=38;5;172:*.yml=38;5;172:*.json=38;5;172:*.toml=38;5;172:*.conf=38;5;172:*.config=38;5;172:*.ini=38;5;172:*.env=38;5;172:*.jpg=38;5;132:*.jpeg=38;5;132:*.png=38;5;132:*.gif=38;5;132:*.bmp=38;5;132:*.tiff=38;5;132:*.svg=38;5;132:*.mp3=38;5;72:*.wav=38;5;72:*.aac=38;5;72:*.flac=38;5;72:*.ogg=38;5;72:*.m4a=38;5;72:*.mp4=38;5;72:*.avi=38;5;72:*.mov=38;5;72:*.mkv=38;5;72:*.flv=38;5;72:*.wmv=38;5;72:*.c=38;5;142:*.cpp=38;5;142:*.py=38;5;142:*.java=38;5;142:*.js=38;5;142:*.ts=38;5;142:*.go=38;5;142:*.rs=38;5;142:*.php=38;5;142:*.html=38;5;142:*.css=38;5;142::*.nix=38;5;142:*.rs=38;5;142di=38;5;109:ur=38;5;223:uw=38;5;203:ux=38;5;142:ue=38;5;142:gr=38;5;223:gw=38;5;203:gx=38;5;142:tr=38;5;223:tw=38;5;203:tx=38;5;142:su=38;5;208:sf=38;5;208:xa=38;5;108:nb=38;5;244:nk=38;5;108:nm=38;5;172:ng=38;5;208:nt=38;5;203:ub=38;5;244:uk=38;5;108:um=38;5;172:ug=38;5;208:ut=38;5;203:lc=38;5;208:lm=38;5;208:uu=38;5;223:gu=38;5;223:un=38;5;223:gn=38;5;223:da=38;5;109:ga=38;5;108:gm=38;5;109:gd=38;5;203:gv=38;5;142:gt=38;5;108:gi=38;5;244:gc=38;5;203:Gm=38;5;108:Go=38;5;172:Gc=38;5;142:Gd=38;5;203:xx=38;5;237'
+
 set -gx BROWSER /etc/profiles/per-user/djshepard/bin/firefox
 
 # For Lorri projects.
@@ -1506,6 +1534,8 @@ set -xg EDITOR ${pkgs.neovim}/bin/nvim
 set -xg TERM xterm-kitty
 
 set -xg SHELL ${pkgs.fish}/bin/fish
+
+set -xg NIXOS_OZONE_WL 1
 
 # Aliases:
 function nvimf
@@ -1611,6 +1641,8 @@ end
       '';
     };
 
+    gpaste.enable = true;
+
     xwayland.enable = true;
   };
 
@@ -1646,6 +1678,10 @@ end
 	};
       };
     };
+
+    # firmware update daemon
+    fwupd.enable = true;
+    #fwupd.package = pkgs.fwupd-efi;
 
     gnome = {
       core-os-services.enable = true;

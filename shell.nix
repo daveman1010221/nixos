@@ -1,4 +1,5 @@
 { pkgs ? import <nixpkgs> {} }:
+
 let
   userHome = builtins.getEnv "HOME";
   projectRoot = "/Documents/projects";
@@ -6,62 +7,71 @@ let
 in
 pkgs.mkShell rec {
   buildInputs = with pkgs; [
+    bat
     binutils
     bubblewrap
-    cargo
-    clang_latest
-    clippy
+    cacert
+    clang
     deterministic-uname
+    eza
+    fd
+    figlet
     fish
-    fishPlugins.bass.src
-    fishPlugins.bobthefish.src
-    fishPlugins.foreign-env.src
-    fishPlugins.grc.src
+    fishPlugins.bass
+    fishPlugins.bobthefish
+    fishPlugins.foreign-env
+    fishPlugins.grc
+    fzf
     getent
     git
     grc
     iproute
     iputils
+    jq
     llvmPackages_latest.bintools
     llvmPackages_latest.stdenv
     neovim
     nix
     openssl
-    rustc
-    rustfmt
+    ripgrep
+    tree
     util-linux
     uutils-coreutils-noprefix
+    which
   ];
 
-  RUSTC_VERSION = overrides.toolchain.channel;
-  LIBCLANG_PATH = pkgs.lib.makeLibraryPath [ pkgs.llvmPackages_latest.libclang.lib ];
-
-  RUSTFLAGS = (builtins.map (a: ''-L ${a}/lib'') [
-    # Add libraries here
-  ]);
-  LD_LIBRARY_PATH = libPath;
-
-  BINDGEN_EXTRA_CLANG_ARGS =
-    (builtins.map (a: ''-I"${a}/include"'') [
-      pkgs.glibc.dev
-    ])
-    ++ [
-      ''-I"${pkgs.llvmPackages_latest.libclang.lib}/lib/clang/${pkgs.llvmPackages_latest.libclang.version}/include"''
-      ''-I"${pkgs.glib.dev}/include/glib-2.0"''
-      ''-I${pkgs.glib.out}/lib/glib-2.0/include/''
-    ];
-
-  # Certain Rust tools won't work without this
-  # This can also be fixed by using oxalica/rust-overlay and specifying the rust-src extension
-  # See https://discourse.nixos.org/t/rust-src-not-found-and-other-misadventures-of-developing-rust-on-nixos/11570/3?u=samuela. for more details.
-  RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
-
   shellHook = ''
+    # Create a file that contains package sources for plugins that get sourced
+    # by fish shell:
+
+    plugins='
+# grc
+source ${pkgs.fishPlugins.grc}/share/fish/vendor_conf.d/grc.fish
+source ${pkgs.fishPlugins.grc}/share/fish/vendor_functions.d/grc.wrap.fish 
+
+# bass
+source ${pkgs.fishPlugins.bass}/share/fish/vendor_functions.d/bass.fish
+
+# bobthefish
+source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/__bobthefish_glyphs.fish
+source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/fish_mode_prompt.fish
+source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/fish_right_prompt.fish
+source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/__bobthefish_colors.fish
+source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/fish_title.fish
+source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/__bobthefish_display_colors.fish
+source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/fish_prompt.fish
+source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/fish_greeting.fish
+source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/bobthefish_display_colors.fish
+    '
+    echo "$plugins" > .plugins.fish
+
     # The '--pure' flag to 'nix-shell' sets this variable to an invalid path
     # and it breaks SSL. The variable doesn't exist at all in an impure shell.
     # I do not know why they do this. The safest fix I've discovered is to set
     # this to a valid path.
     export NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+
+    export ARG_MAX=2097152
 
     # Accumulate all ro_bind_options, collected from the various package derivations.
     all_ro_bind_options=""
@@ -71,40 +81,45 @@ pkgs.mkShell rec {
     # Additionally, we will try to use this to add items to the PATH.
 
     package_paths=(
+        "${pkgs.bat}"
         "${pkgs.binutils}"
         "${pkgs.bubblewrap}"
         "${pkgs.cacert}"
-        "${pkgs.cargo}"
-        "${pkgs.clang_latest}"
-        "${pkgs.clippy}"
+        "${pkgs.clang}"
         "${pkgs.deterministic-uname}"
+        "${pkgs.eza}"
+        "${pkgs.fd}"
+        "${pkgs.figlet}"
         "${pkgs.fish}"
-        "${pkgs.fishPlugins.bass.src}"
-        "${pkgs.fishPlugins.bobthefish.src}"
-        "${pkgs.fishPlugins.foreign-env.src}"
-        "${pkgs.fishPlugins.grc.src}"
+        "${pkgs.fishPlugins.bass}"
+        "${pkgs.fishPlugins.bobthefish}"
+        "${pkgs.fishPlugins.foreign-env}"
+        "${pkgs.fishPlugins.grc}"
+        "${pkgs.fzf}"
         "${pkgs.getent}"
         "${pkgs.git}"
         "${pkgs.grc}"
         "${pkgs.iproute}"
         "${pkgs.iputils}"
+        "${pkgs.jq}"
         "${pkgs.llvmPackages_latest.bintools}"
         "${pkgs.llvmPackages_latest.stdenv}"
+        "${pkgs.lolcat}"
         "${pkgs.neovim}"
         "${pkgs.nix}"
         "${pkgs.openssl}"
-        "${pkgs.rustc}"
-        "${pkgs.rustfmt}"
+        "${pkgs.ripgrep}"
         "${pkgs.tree}"
         "${pkgs.util-linux}"
         "${pkgs.uutils-coreutils-noprefix}"
+        "${pkgs.which}"
     )
 
     # This newPath will be used as PATH in the sandbox.
-    newPath=""
+    fullPath=""
 
     # Generate --ro-bind options for a given package
-    generate_ro_bind_options_and_update_path() {
+    generate_ro_bind_options() {
       local package_path="$1"
       local ro_bind_options=""
 
@@ -113,19 +128,33 @@ pkgs.mkShell rec {
       # which is probably a good idea, but maybe not initially.
       for path in $(nix-store --query --requisites "$package_path"); do
         ro_bind_options+="--ro-bind $path $path "
-
-        # Use the package paths to build the newPath.
-        newPath+="$path/bin:"
       done
 
       echo "$ro_bind_options"
     }
 
+    # Generate path arguments for a given package
+    generate_new_path() {
+      local package_path="$1"
+
+      for path in $(nix-store --query --requisites "$package_path"); do
+        # Use the package paths to build the newPath.
+        newPath+="$path/bin:"
+      done
+
+      echo "$newPath"
+    }
+
     for path in "''${package_paths[@]}"; do
         # Add package derivations to the full set of ro-bind options for bwrap.
-        ro_bind_options_for_package=$(generate_ro_bind_options_and_update_path "$path")
+        ro_bind_options_for_package=$(generate_ro_bind_options "$path")
         all_ro_bind_options+="$ro_bind_options_for_package"
+
+        new_path_segments=$(generate_new_path "$path")
+        fullPath+="$new_path_segments"
     done
+
+    export PATH=$fullPath
 
     # Define UID and GID for creating temporary passwd and group files
     mUID=$(id -u)
@@ -149,6 +178,7 @@ pkgs.mkShell rec {
 
     bwrap \
       --dir /tmp \
+      --dir $HOME/.config/fish \
       --proc /proc \
       --dev /dev \
       --chdir ${projectDir} \
@@ -163,6 +193,7 @@ pkgs.mkShell rec {
       --dir /etc/ssl/certs \
       --symlink /etc/static/ssl/certs/ca-bundle.crt /etc/ssl/certs/ca-bundle.crt \
       --symlink /etc/static/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt \
+      --symlink ${projectDir}/config.fish $HOME/.config/fish/config.fish \
       --symlink /etc/static/ssl/trust-source /etc/ssl/trust-source \
       --setenv SSL_CERT_FILE "/etc/ssl/certs/ca-certificates.crt" \
       --setenv SSL_CERT_DIR "/etc/ssl/certs" \
@@ -173,11 +204,11 @@ pkgs.mkShell rec {
       --setenv XDG_RUNTIME_DIR "/run/user/$(id -u)" \
       --setenv PS1 "rust-dev\$ " \
       --setenv TERM "screen-256color" \
-      --setenv PATH "$newPath" \
+      --setenv fullPath "$fullPath" \
       --ro-bind $TMP_PASSWD /etc/passwd \
       --ro-bind $TMP_GROUP /etc/group \
       --ro-bind $HOME/.gitconfig $HOME/.gitconfig \
       --ro-bind $HOME/.git-credentials $HOME/.git-credentials \
-      ${pkgs.fish}/bin/fish
+      ${pkgs.fish}/bin/fish --private
   '';
 }
