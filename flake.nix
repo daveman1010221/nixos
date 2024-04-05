@@ -210,7 +210,7 @@ source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/bobthefish_d
     # order you see the operations here is roughly the order that things need
     # to happen.
 
-    bwrap \
+    exec bwrap \
       --symlink /tmp $TMP \
       --dir $HOME/.config/fish \
       --proc /proc \
