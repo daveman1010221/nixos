@@ -54,6 +54,7 @@
             pkg-config
             ripgrep
             tree
+            tree-sitter
             util-linux
             uutils-coreutils-noprefix
             which
