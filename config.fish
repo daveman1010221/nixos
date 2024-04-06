@@ -327,7 +327,7 @@ begin
 end
 # prevent fish from generating completions on first run
 if not test -d $__fish_user_data_dir/generated_completions
-  /nix/store/43dnc4h7x0p8ybaq38aaxkhy722kzrx2-coreutils-9.4/bin/mkdir \
+  $COREUTILS/bin/mkdir \
       $__fish_user_data_dir/generated_completions
 end
 
