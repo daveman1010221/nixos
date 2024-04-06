@@ -5,6 +5,7 @@
     flake-utils.url = "github:numtide/flake-utils";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     rust-overlay.url = "github:oxalica/rust-overlay";
+    myNeovimOverlay.url = "github:daveman1010221/nix-neovim";
 
     flake-compat = {
       url = "github:edolstra/flake-compat";
@@ -12,12 +13,12 @@
     };
   };
 
-  outputs = { self, flake-utils, nixpkgs, rust-overlay, ... }:
+  outputs = { self, flake-utils, nixpkgs, rust-overlay, myNeovimOverlay, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
           inherit system;
-          overlays = [ rust-overlay.overlays.default ];
+          overlays = [ rust-overlay.overlays.default myNeovimOverlay.overlays.default ];
         };
       in
       with pkgs;
@@ -47,7 +48,7 @@
             jq
             llvmPackages_latest.bintools
             llvmPackages_latest.stdenv
-            neovim
+            nvim-pkg
             nix
             openssl
             pkg-config
@@ -66,13 +67,12 @@
             # Rust linter
             clippy
           ];
-            #rust-bin.beta.latest.default
 
   shellHook = ''
     # Create a file that contains package sources for plugins that get sourced
     # by fish shell:
 
-    plugins='
+    fishPlugins='
 # grc
 source ${pkgs.fishPlugins.grc}/share/fish/vendor_conf.d/grc.fish
 source ${pkgs.fishPlugins.grc}/share/fish/vendor_functions.d/grc.wrap.fish 
@@ -90,8 +90,10 @@ source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/__bobthefish
 source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/fish_prompt.fish
 source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/fish_greeting.fish
 source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/bobthefish_display_colors.fish
+
+set -xg COREUTILS "${pkgs.uutils-coreutils-noprefix}"
     '
-    echo "$plugins" > .plugins.fish
+    echo "$fishPlugins" > .plugins.fish
 
     # The '--pure' flag to 'nix-shell' sets this variable to an invalid path
     # and it breaks SSL. The variable doesn't exist at all in an impure shell.
@@ -133,8 +135,8 @@ source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/bobthefish_d
         "${pkgs.llvmPackages_latest.bintools}"
         "${pkgs.llvmPackages_latest.stdenv}"
         "${pkgs.lolcat}"
-        "${pkgs.neovim}"
         "${pkgs.nix}"
+        "${nvim-pkg}"
         "${pkgs.openssl}"
         "${pkgs.ripgrep}"
         "${pkgs.rust-bin.stable.latest.default}"
