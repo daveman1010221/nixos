@@ -428,11 +428,13 @@ in
 
   # System-wide package list
   environment.systemPackages = with pkgs; [
+    adwaita-icon-theme
     babelfish
     bat
     btop
     cowsay
     cryptsetup
+    dconf-editor
     delta
     direnv
     doas
@@ -445,6 +447,7 @@ in
     eza
     fd
     file
+    file-roller
     findutils
     firefox
     fish
@@ -457,84 +460,71 @@ in
     fzf
     gitFull
     git-up
-    gnome.adwaita-icon-theme
-    gnome.dconf-editor
+    gnome-autoar
+    gnome-calculator
+    gnome-calendar
+    gnome-common
+    gnome-dictionary
+    gnome-disk-utility
     gnomeExtensions.applications-menu
     gnomeExtensions.dash-to-dock
-    gnomeExtensions.dash-to-dock-animator
     gnomeExtensions.dash-to-dock-toggle
     gnomeExtensions.gtk4-desktop-icons-ng-ding
     gnomeExtensions.places-status-indicator
     gnomeExtensions.system76-scheduler
     gnomeExtensions.window-list
-    gnome.file-roller
+    gnome-font-viewer
     gnome.gdm
-    gnome.gpaste
     gnome.gnome-applets
-    gnome.gnome-autoar
     gnome.gnome-backgrounds
     gnome.gnome-bluetooth
-    gnome.gnome-calculator
-    gnome.gnome-calendar
     gnome.gnome-characters
     gnome.gnome-clocks
     gnome.gnome-color-manager
-    gnome.gnome-common
     gnome.gnome-control-center
-    gnome.gnome-control-center
-    gnome.gnome-control-center
-    gnome.gnome-dictionary
-    gnome.gnome-disk-utility
-    gnome.gnome-disk-utility
-    gnome.gnome-font-viewer
     gnome.gnome-initial-setup
-    gnome.gnome-keyring
     gnome.gnome-nettool
     gnome.gnome-power-manager
-    gnome.gnome-screenshot
     gnome.gnome-session
     gnome.gnome-settings-daemon
     gnome.gnome-shell
     gnome.gnome-shell-extensions
-    gnome.gnome-system-monitor
-    gnome.gnome-system-monitor
-    gnome.gnome-terminal
-    gnome.gnome-themes-extra
-    gnome.gnome-tweaks
-    gnome.gpaste
-    gnome.gucharmap
-    gnome.libgnome-keyring
+    gnome-keyring
     gnome.mutter
-    gnome.nautilus
     gnome.networkmanager-iodine
     gnome.networkmanager-openvpn
     gnome.networkmanager-vpnc
     gnome.nixos-gsettings-overrides
-    gnome.seahorse
-    gnome.simple-scan
-    gnome.sushi
+    gnome-screenshot
+    gnome-system-monitor
+    gnome-terminal
+    gnome-themes-extra
+    gnome-tweaks
+    gpaste
     grc
     grub2_efi
     gtkimageview
+    gucharmap
     inconsolata-nerdfont
     jq
     kitty
     kitty-img
     kitty-themes
     libcanberra-gtk3
+    libgnome-keyring
     llvmPackages_16.clangUseLLVM
     llvmPackages_16.libunwind
     lolcat
-    #lorri
     lvm2 # Provides LVM tools: pvcreate, vgcreate, lvcreate
     mdadm # RAID management
     mlocate
+    nautilus
     neo-cowsay
     neofetch
     neovim
     nerdfonts
     nftables
-    nvtop-intel
+    nvtopPackages.intel
     openssl
     parted
     protonvpn-gui
@@ -543,11 +533,15 @@ in
     python312Full
     python312Packages.jsonschema
     ripgrep
+    seahorse
     signal-desktop-beta
+    simple-scan
     sqlite
+    sushi
     terminus-nerdfont
     tmux
     tree
+    tree-sitter
     (vscode-with-extensions.override {
       vscodeExtensions = with vscode-extensions; [
         bbenoist.nix
@@ -567,6 +561,7 @@ in
     wasmer-pack
     wget
     yaru-theme
+    zellij
   ];
 
   fileSystems = {
@@ -589,6 +584,10 @@ in
   };
 
   hardware = {
+    graphics = {
+      enable = true;
+      enable32Bit = true;
+    };
 
     nvidia = {
       # Modesetting is required.
@@ -611,13 +610,6 @@ in
       # Optionally, you may need to select the appropriate driver version for
       # your specific GPU.
       package = config.boot.kernelPackages.nvidiaPackages.stable;
-    };
-
-    # Enable OpenGL
-    opengl = {
-      enable = true;
-      driSupport = true;
-      driSupport32Bit = true;
     };
 
     pulseaudio.enable = true;
@@ -1698,24 +1690,26 @@ end
 
     #lorri.enable = true;
 
-    # Configure GNOME desktop environment with GDM3 display manager
     xserver = {
       # Required for DE to launch.
       enable = true;
-      displayManager = {
-        gdm = {
-          enable = true;
-          wayland = true;
-        };
-        defaultSession = "gnome";
-      };
 
       # Enable Desktop Environment.
       desktopManager.gnome.enable = true;
 
       # Exclude default X11 packages I don't want.
       excludePackages = with pkgs; [ xterm ];
+
+      # Configure GNOME desktop environment with GDM3 display manager
+      displayManager = {
+        gdm = {
+          enable = true;
+          wayland = true;
+        };
+      };
     };
+
+    displayManager.defaultSession = "gnome";
 
     # Load nvidia driver for Xorg and Wayland
     xserver.videoDrivers = ["nvidia"];
@@ -1956,7 +1950,7 @@ end
   };
 
   # Enable sound.
-  sound.enable = true;
+  #sound.enable = true;
 
   swapDevices = [
     {
