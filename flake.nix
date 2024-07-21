@@ -53,6 +53,7 @@
             openssl
             pkg-config
             ripgrep
+            strace
             tree
             tree-sitter
             util-linux
@@ -141,6 +142,7 @@ set -xg COREUTILS "${pkgs.uutils-coreutils-noprefix}"
         "${pkgs.openssl}"
         "${pkgs.ripgrep}"
         "${pkgs.rust-bin.stable.latest.default}"
+        "${pkgs.strace}"
         "${pkgs.tree}"
         "${pkgs.util-linux}"
         "${pkgs.uutils-coreutils-noprefix}"
