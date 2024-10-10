@@ -262,7 +262,7 @@ in
 
   nixpkgs = {
     config.allowUnfree = true;
-    config.pulseaudio = true;
+    # config.pulseaudio = true;
     overlays = [
       (self: super: {
         nvim-treesitter = super.vimPlugins.nvim-treesitter.overrideAttrs (oldAttrs: {
@@ -423,7 +423,12 @@ in
       systemd-boot.enable = false;
     };
 
-    swraid.enable = true;
+    swraid = {
+      enable = true;
+      mdadmConf = ''
+        MAILADDR daveman1010220@gmail.com
+      '';
+    };
   };
 
   # System-wide package list
@@ -464,7 +469,6 @@ in
     gnome-calculator
     gnome-calendar
     gnome-common
-    gnome-dictionary
     gnome-disk-utility
     gnomeExtensions.applications-menu
     gnomeExtensions.dash-to-dock
@@ -474,26 +478,26 @@ in
     gnomeExtensions.system76-scheduler
     gnomeExtensions.window-list
     gnome-font-viewer
-    gnome.gdm
-    gnome.gnome-applets
-    gnome.gnome-backgrounds
-    gnome.gnome-bluetooth
-    gnome.gnome-characters
-    gnome.gnome-clocks
-    gnome.gnome-color-manager
-    gnome.gnome-control-center
-    gnome.gnome-initial-setup
-    gnome.gnome-nettool
-    gnome.gnome-power-manager
-    gnome.gnome-session
-    gnome.gnome-settings-daemon
-    gnome.gnome-shell
-    gnome.gnome-shell-extensions
+    gdm
+    gnome-applets
+    gnome-backgrounds
+    gnome-bluetooth
+    gnome-characters
+    gnome-clocks
+    gnome-color-manager
+    gnome-control-center
+    gnome-initial-setup
+    gnome-nettool
+    gnome-power-manager
+    gnome-session
+    gnome-settings-daemon
+    gnome-shell
+    gnome-shell-extensions
     gnome-keyring
-    gnome.mutter
-    gnome.networkmanager-iodine
-    gnome.networkmanager-openvpn
-    gnome.networkmanager-vpnc
+    mutter
+    networkmanager-iodine
+    networkmanager-openvpn
+    networkmanager-vpnc
     gnome.nixos-gsettings-overrides
     gnome-screenshot
     gnome-system-monitor
@@ -557,8 +561,9 @@ in
         }
       ];
     })
-    wasmer
-    wasmer-pack
+    wordbook
+    # wasmer
+    # wasmer-pack
     wget
     yaru-theme
     zellij
@@ -590,6 +595,8 @@ in
     };
 
     nvidia = {
+      open = true;
+
       # Modesetting is required.
       modesetting.enable = true;
 
@@ -612,26 +619,21 @@ in
       package = config.boot.kernelPackages.nvidiaPackages.stable;
     };
 
-    pulseaudio.enable = true;
-
     # Enable System76 hardware support
-    system76 = {
-      enableAll = true;
-      firmware-daemon.enable = true;
-      power-daemon.enable = true;
-      kernel-modules.enable = true;
-    };
+    # system76 = {
+      # enableAll = true;
+      # firmware-daemon.enable = true;
+      # power-daemon.enable = true;
+      # kernel-modules.enable = true;
+    # };
   };
 
   networking = {
     hostName = "Servalws";
 
-    # List services that you want to enable:
     firewall.enable = false;
 
-    # networking.hostName = "nixos"; # Define your hostname.
-    # Pick only one of the below networking options.
-    networkmanager.enable = true;  # Easiest to use and most distros use this by default.
+    networkmanager.enable = true;
 
     nftables.checkRuleset = true;
     nftables.enable = true;
@@ -1647,7 +1649,7 @@ end
 
   services = {
     # Ensure gnome-settings-daemon udev rules are enabled.
-    udev.packages = with pkgs; [ gnome.gnome-settings-daemon ];
+    udev.packages = with pkgs; [ gnome-settings-daemon ];
 
     fail2ban = {
       banaction = "nftables-multiport";
@@ -1800,6 +1802,7 @@ end
         #};
       };
     };
+
   };
 
   systemd = {
@@ -1933,6 +1936,7 @@ end
       #};
     #};
 
+
     services."set-lvm-readahead" = {
       description = "Set read-ahead for LVM LV to optimize performance";
       after = [ "lvm.service" ];
@@ -2028,5 +2032,5 @@ EOF
   # and migrated your data accordingly.
   #
   # For more information, see `man configuration.nix` or https://nixos.org/manual/nixos/stable/options#opt-system.stateVersion .
-  system.stateVersion = "23.11"; # Did you read the comment?
+  system.stateVersion = "24.05"; # Did you read the comment?
 }
