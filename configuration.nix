@@ -205,6 +205,7 @@
     atuin
     babelfish
     bat
+    bottom
     bonnie
     btop
     cryptsetup
@@ -358,6 +359,12 @@
 
   hardware = {
     graphics.enable = true;
+
+    bluetooth = {
+      enable = true;
+      powerOnBoot = true;
+    };
+
     bumblebee.enable = false;
 
     nvidiaOptimus.disable = false;
@@ -547,6 +554,8 @@
       nssmdns4 = true;
     };
 
+    blueman.enable = true;
+
     fail2ban = {
       banaction = "nftables-multiport";
       bantime-increment.enable = true;
@@ -646,10 +655,12 @@
     services."lvm" = {
       wantedBy = [ "multi-user.target" ];
       after = [ "local-fs.target" ];
+      unitConfig = {
+        Description = "Activate LVM volumes";
+      };
       serviceConfig = {
-        description = "Activate LVM volumes";
-        type = "oneshot";
-        execStart = "${pkgs.lvm2}/bin/lvm vgchange -ay";
+        Type = "oneshot";
+        ExecStart = "${pkgs.lvm2.bin}/bin/lvm vgchange -ay";
       };
     };
 
