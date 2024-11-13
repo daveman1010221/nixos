@@ -39,18 +39,26 @@
     # Configure the kernel
     kernelPackages = pkgs.linuxPackages_latest;
     kernelParams = [
-    "intel_iommu=on"
-    "intel_idle.max_cstate=4"
-    "i8042.unlock"
-    "lockdown=confidentiality"
-    "mitigations=auto"
-    "modprobe.blacklist=nouveau"
-    "pci=realloc"
-    "zswap.compressor=lzo"
-    "zswap.enabled=1"
-    "zswap.max_pool_percent=10"
-    "seccomp=1"
+      "i8042.unlock"
+      "intel_idle.max_cstate=4"
+      "intel_iommu=on"
+      "lockdown=confidentiality"
+      "mitigations=auto"
+      "modprobe.blacklist=nouveau"
+      "pci=realloc"
+      "seccomp=1"
+      "unprivileged_userns_clone=1"
+      "zswap.compressor=lzo"
+      "zswap.enabled=1"
+      "zswap.max_pool_percent=10"
     ];
+
+    kernel = {
+      sysctl = {
+        "net.ipv4.ip_unprivileged_port_start" = 0;
+	"net.ipv4.ping_group_range" = "0 2147483647";
+      };
+    };
 
     initrd = {
       # Ensure the initrd includes necessary modules for encryption, RAID, and filesystems
@@ -208,6 +216,10 @@
     bottom
     bonnie
     btop
+    buildkit
+    cheese
+    cni-plugins
+    containerd
     cryptsetup
     cups
     deja-dup
@@ -262,10 +274,6 @@
     gnome-shell
     gnome-shell-extensions
     gnome-keyring
-    mutter
-    networkmanager-iodine
-    networkmanager-openvpn
-    networkmanager-vpnc
     gnome-screenshot
     gnome-system-monitor
     gnome-terminal
@@ -274,6 +282,7 @@
     gpaste
     grc
     grub2_efi
+    gst_all_1.gstreamer
     gtkimageview
     gucharmap
     jq
@@ -288,12 +297,18 @@
     lsof
     lvm2 # Provides LVM tools: pvcreate, vgcreate, lvcreate
     mdadm # RAID management
+    microsoft-edge
     mlocate
+    mutter
     nautilus
     neo-cowsay
     neofetch
     (hiPrio neovim)
+    nerdctl
     nerdfonts
+    networkmanager-iodine
+    networkmanager-openvpn
+    networkmanager-vpnc
     nftables
     nix-index
     nvtopPackages.intel
@@ -304,13 +319,17 @@
     pyenv
     python312Full
     python312Packages.jsonschema
+    rootlesskit
     ripgrep
     seahorse
     signal-desktop-beta
     simple-scan
+    slirp4netns
     sqlite
     starship
     sushi
+    #teams  <-- not currently supported on linux targets
+    tinyxxd
     tmux
     tree
     tree-sitter
@@ -332,7 +351,9 @@
     wordbook
     wasmer
     wasmer-pack
+    wayland-utils
     wget
+    wl-clipboard
     (hiPrio xwayland)
     yaru-theme
     zellij
@@ -796,6 +817,26 @@ EOF
     hashedPassword = ''$y$j9T$TsZjcgKr0u3TvD1.0de.W/$c/utzJh2Mkg.B38JKR7f3rQprgZ.RwNvUaoGfE/OD8D'';
     extraGroups = [ "wheel" "mlocate" ]; # Enable ‘sudo’ for the user.
     shell = pkgs.fish;
+    subUidRanges = [
+      {
+        count = 1;
+        startUid = 1000;
+      }
+      {
+        count = 65534;
+        startUid = 100001;
+      }
+    ];
+    subGidRanges = [
+      {
+        count = 1;
+        startGid = 100;
+      }
+      {
+        count = 999;
+        startGid = 1001;
+      }
+    ];
   };
   
   users.groups.mlocate = {};
