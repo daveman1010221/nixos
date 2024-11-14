@@ -212,12 +212,15 @@
   environment.systemPackages = with pkgs; [
     atuin
     babelfish
+    bandwhich
     bat
     bottom
     bonnie
     btop
     buildkit
     cheese
+    clamav
+    cl-wordle
     cni-plugins
     containerd
     cryptsetup
@@ -227,6 +230,7 @@
     direnv
     doas
     dosfstools # Provides mkfs.vfat for EFI partition
+    dust
     e2fsprogs # Provides mkfs.ext4
     efibootmgr
     efitools
@@ -281,11 +285,14 @@
     gnome-tweaks
     gpaste
     grc
+    grex
     grub2_efi
     gst_all_1.gstreamer
     gtkimageview
     gucharmap
+    hyperfine
     jq
+    jqp
     kitty
     kitty-img
     kitty-themes
@@ -297,6 +304,7 @@
     lsof
     lvm2 # Provides LVM tools: pvcreate, vgcreate, lvcreate
     mdadm # RAID management
+    mdcat
     microsoft-edge
     mlocate
     mutter
@@ -314,6 +322,9 @@
     nvtopPackages.intel
     openssl
     parted
+    podman
+    podman-compose
+    podman-desktop
     protonvpn-gui
     pwgen
     pyenv
@@ -328,8 +339,12 @@
     sqlite
     starship
     sushi
+    systeroid
+    trunk
     #teams  <-- not currently supported on linux targets
     tinyxxd
+    tldr
+    tealdeer
     tmux
     tree
     tree-sitter
@@ -348,6 +363,9 @@
         }
       ];
     })
+    viu
+    wasm-pack
+    wasmtime
     wordbook
     wasmer
     wasmer-pack
@@ -434,8 +452,118 @@
     nftables.checkRuleset = true;
     nftables.enable = true;
     nftables.flushRuleset = true;
-    #nftables.ruleset = ''
-    #'';
+    nftables.ruleset = ''
+table ip mytable {
+    set inbound_whitelist {
+        type inet_service
+        elements = { 22, 8080 }
+    }
+
+    set vpn_ports {
+        type inet_service
+        elements = { 80, 443, 1194, 4569, 5060, 51820 }
+    }
+
+    chain input {
+        type filter hook input priority filter; policy drop;
+        ct state established,related accept
+        iif "lo" accept
+        tcp dport @inbound_whitelist ct state new accept
+        jump sig_filter_both
+        jump sig_filter_input
+        iifname "wlp0s20f3" ip saddr { 172.26.0.0/16, 192.168.1.0/24 } accept
+        ip protocol icmp limit rate 10/second burst 20 packets accept
+        log prefix "INPUT-DROP: " level debug flags all counter packets 0 bytes 0 drop
+    }
+
+    chain output {
+        type filter hook output priority filter; policy drop;
+        ct state established,related accept
+        udp dport { 53, 67, 68, 123, 5353 } accept
+        udp dport @vpn_ports accept
+        tcp dport @vpn_ports accept
+        tcp dport { 7770, 8443 } accept
+        tcp dport 8080 accept # Allow outbound traffic on port 8080
+        oifname "lo" accept
+        jump sig_filter_both
+        jump sig_filter_output
+        oifname "wlp0s20f3" ip daddr { 172.26.0.0/16, 192.168.1.0/24 } accept
+        oifname "tun0" accept
+        ip protocol icmp limit rate 10/second burst 20 packets accept
+        log prefix "OUTPUT-DROP: " level debug flags all counter packets 12 bytes 738 drop
+    }
+
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+        ct state established,related accept
+        # Allow traffic from Docker containers to the outside world on port 8080
+        iifname "docker0" tcp dport 8080 oifname != "docker0" accept
+        # Allow traffic to Docker containers from the outside world on port 8080
+        iifname != "docker0" tcp dport 8080 oifname "docker0" accept
+        # Allow bridged traffic
+        iifname "br0" oifname "br0" accept
+        ip protocol icmp limit rate 10/second burst 20 packets accept
+        ether type arp drop
+        ip daddr { 224.0.0.0/4, 255.255.255.255 } drop
+        log prefix "FORWARD-DROP: " level debug flags all counter packets 0 bytes 0 drop
+    }
+
+    chain prerouting {
+        type nat hook prerouting priority dstnat; policy accept;
+    }
+
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+        ip saddr 172.17.0.0/16 oifname != "docker0" masquerade
+        oifname "tun0" masquerade
+    }
+
+    chain sig_filter_input {
+        icmp type echo-request ip length > 1028 log prefix "Large ICMP Echo Request: " counter packets 0 bytes 0
+        icmp type echo-request ip length > 1028 drop
+        icmp type echo-reply ip length > 1028 log prefix "Large ICMP Echo Reply: " counter packets 0 bytes 0
+        icmp type echo-reply ip length > 1028 drop
+        icmp type destination-unreachable icmp code admin-prohibited log prefix "Admin Prohibited ICMP: " counter packets 0 bytes 0
+        icmp type destination-unreachable icmp code admin-prohibited drop
+        icmp type redirect log prefix "ICMP Redirect: " counter packets 0 bytes 0
+        icmp type redirect drop
+        icmp type time-exceeded icmp code net-unreachable log prefix "TTL Expired ICMP: " counter packets 0 bytes 0
+        icmp type time-exceeded icmp code net-unreachable drop
+        icmp type parameter-problem log prefix "ICMP Parameter Problem: " counter packets 0 bytes 0
+        icmp type parameter-problem drop
+        icmp type address-mask-request log prefix "ICMP Address Mask Request: " counter packets 0 bytes 0
+        icmp type address-mask-request drop
+        icmp type timestamp-request log prefix "ICMP Timestamp Request: " counter packets 0 bytes 0
+        icmp type timestamp-request drop
+        icmp type timestamp-reply log prefix "ICMP Timestamp Reply: " counter packets 0 bytes 0
+        icmp type timestamp-reply drop
+        icmp type 0-255 icmp code > 15 log prefix "Malformed ICMP Packet: " counter packets 0 bytes 0
+        icmp type 0-255 icmp code > 15 drop
+    }
+
+    chain sig_filter_output {
+    }
+
+    chain sig_filter_both {
+    }
+}
+table ip6 filter {
+    chain input {
+        type filter hook input priority filter; policy drop;
+        ip6 daddr ::/0 drop
+    }
+
+    chain output {
+        type filter hook output priority filter; policy drop;
+        ip6 saddr ::/0 drop
+    }
+
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+        ip6 daddr ::/0 drop
+    }
+}
+    '';
   };
 
   programs = {
@@ -577,6 +705,31 @@
 
     blueman.enable = true;
 
+    clamav = {
+      scanner.enable = true;
+      updater.enable = true;
+      daemon.enable = true;
+      daemon.settings = { };
+      fangfrisch.enable = true;
+      updater.settings = { };
+      updater.interval = "hourly";
+      updater.frequency = 12;
+      scanner.scanDirectories = [
+        "/home"
+        "/var/lib"
+        "/tmp"
+        "/etc"
+        "/var/tmp"
+      ];
+      scanner.interval = "*-*-* 04:00:00";
+      fangfrisch.settings = {
+        sanesecurity = {
+	  enabled = "yes";
+	  prefix = "https://mirror.rollernet.us/sanesecurity/";
+	};
+      };
+    };
+
     fail2ban = {
       banaction = "nftables-multiport";
       bantime-increment.enable = true;
@@ -672,6 +825,7 @@
   };
 
   systemd = {
+
     # systemd service to activate LVM volumes
     services."lvm" = {
       wantedBy = [ "multi-user.target" ];
@@ -785,12 +939,49 @@
         echo "Creating .gitconfig for ${userConfig.user}"
         cat > /home/${userConfig.user}/.gitconfig <<EOF
 [user]
-  name = ${userConfig.name}
-  email = ${userConfig.email}
+	email = daveman1010220@gmail.com
+	name = David Shepard
+[sendemail]
+	smtpencryption = tls
+	smtpserverport = 587
+	smtpuser = daveman1010220@gmail.com
+	smtpserver = smtp.googlemail.com
+        smtpPass = mlucmulyvpqlfprb
+[pull]
+	rebase = false
+[http]
+	sslCAPath = /etc/ssl/certs/ca-certificates.crt
+	sslVerify = true
+	sslCAFile = /etc/ssl/certs/ca-certificates.crt
+	sslCAInfo = /etc/ssl/certs/ca-certificates.crt
 [init]
-  defaultBranch = main
-[credential]
-  helper = store
+	defaultBranch = main
+[safe]
+	#directory = /usr/lib/vmware/modules/source/vmware-host-modules/
+[core]
+    pager = delta
+	autocrlf = false
+
+[interactive]
+    diffFilter = delta --color-only
+
+[delta]
+    navigate = true    # use n and N to move between diff sections
+    light = false      # set to true if you're in a terminal w/ a light background color (e.g. the default macOS terminal)
+    side-by-side = true
+    line-numbers = true
+    theme = gruvbox-dark
+
+[merge]
+    conflictstyle = diff3
+
+[diff]
+    colorMoved = default
+[filter "lfs"]
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true
 EOF
         # Ensure the file ownership is correct
         chown ${userConfig.user} /home/${userConfig.user}/.gitconfig
@@ -819,19 +1010,11 @@ EOF
     shell = pkgs.fish;
     subUidRanges = [
       {
-        count = 1;
-        startUid = 1000;
-      }
-      {
         count = 65534;
         startUid = 100001;
       }
     ];
     subGidRanges = [
-      {
-        count = 1;
-        startGid = 100;
-      }
       {
         count = 999;
         startGid = 1001;
@@ -840,6 +1023,12 @@ EOF
   };
   
   users.groups.mlocate = {};
+
+  virtualisation = {
+    podman = {
+      enable = true;
+    };
+  };
 
 
   # Copy the NixOS configuration file and link it from the resulting system

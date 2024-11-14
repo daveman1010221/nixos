@@ -998,22 +998,21 @@ set -gx BROWSER /etc/profiles/per-user/djshepard/bin/firefox
 # Set these to get Wayland working...
 ############################################################
 #set -gx __EGL_VENDOR_LIBRARY_FILENAMES /usr/share/glvnd/egl_vendor.d/10_nvidia.json /usr/share/glvnd/egl_vendor.d/50_mesa.json
-#set -gx GBM_BACKEND nvidia-drm
 #set -gx __GLX_VENDOR_LIBRARY_NAME nvidia
-#set -gx _JAVA_AWT_WM_NONREPARENTING 1
-#set -gx MOZ_ENABLE_WAYLAND 1
 #set -gx QT_QPA_PLATFORMTHEME "wayland"
-#set -gx QT_QPA_PLATFORM "wayland"
-#set -gx SDL_VIDEODRIVER wayland
-# set -gx WLR_DRM_NO_ATOMIC 1
-# set -gx WLR_NO_HARDWARE_CURSORS 1
+#set -gx WLR_DRM_NO_ATOMIC 1
 #set -gx XDG_CONFIG_HOME $CURRENT_USER_HOME/.config
 #set -gx XDG_SESSION_TYPE wayland
-# 
 #set -gx ENABLE_VKBASALT 1
 #set -gx LIBVA_DRIVER_NAME nvidia
 
-# set -gx __NV_PRIME_RENDER_OFFLOAD 1
+set -gx GBM_BACKEND nvidia-drm
+set -gx _JAVA_AWT_WM_NONREPARENTING 1
+set -gx MOZ_ENABLE_WAYLAND 1
+set -gx QT_QPA_PLATFORM "wayland"
+set -gx SDL_VIDEODRIVER wayland
+set -gx WLR_NO_HARDWARE_CURSORS 1
+
 ############################################################
 
 # Set variables for Java
