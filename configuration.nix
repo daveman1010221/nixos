@@ -37,6 +37,8 @@
 
   boot = {
     # Configure the kernel
+    #kernelPackages = pkgs.linuxPackages_6_11_hardened; <-- This bug-checks when GDM tries to initialize the external Nvidia display, so clearly some sort of issue with the Nvidia driver and the hardened kernel.
+    #kernelModules = [ ];
     kernelPackages = pkgs.linuxPackages_latest;
     kernelParams = [
       "i8042.unlock"
@@ -59,6 +61,8 @@
 	"net.ipv4.ping_group_range" = "0 2147483647";
       };
     };
+
+    # extraModulePackages = with config.boot.kernelPackages; [ ];
 
     initrd = {
       # Ensure the initrd includes necessary modules for encryption, RAID, and filesystems
@@ -291,6 +295,7 @@
     gtkimageview
     gucharmap
     hyperfine
+    intel-gpu-tools
     jq
     jqp
     kitty
@@ -301,6 +306,7 @@
     llvmPackages_18.clangUseLLVM
     llvmPackages_18.libunwind
     lolcat
+    lshw
     lsof
     lvm2 # Provides LVM tools: pvcreate, vgcreate, lvcreate
     mdadm # RAID management
@@ -364,6 +370,7 @@
       ];
     })
     viu
+    vkmark
     wasm-pack
     wasmtime
     wordbook
@@ -408,16 +415,19 @@
 
     nvidiaOptimus.disable = false;
     nvidia = {
-      prime.allowExternalGpu = true;
-      prime.offload.enable = true;
-      prime.offload.enableOffloadCmd = true;
-      prime.nvidiaBusId = "PCI:1:0:0";
-      prime.intelBusId = "PCI:0:2:0";
-      prime.reverseSync.enable = true;
+      prime = {
+        allowExternalGpu = false;
+        offload.enable = false; # Mutually exclusive with prime sync.
+        offload.enableOffloadCmd = false;
+        sync.enable = false;
+        nvidiaBusId = "PCI:1:0:0";
+        intelBusId = "PCI:0:2:0";
+        reverseSync.enable = true;
+      };
 
-      dynamicBoost.enable = false;
+      dynamicBoost.enable = true;
 
-      open = false;
+      open = true;
 
       # Modesetting is required.
       modesetting.enable = true;
@@ -426,11 +436,11 @@
       # fail. Enable this if you have graphical corruption issues or
       # application crashes after waking up from sleep. This fixes it by saving
       # the entire VRAM memory to /tmp/ instead of just the bare essentials.
-      powerManagement.enable = true;
+      powerManagement.enable = false;
 
       # Fine-grained power management. Turns off GPU when not in use.
       # Experimental and only works on modern Nvidia GPUs (Turing or newer).
-      powerManagement.finegrained = true;
+      powerManagement.finegrained = false;
 
       # Enable the Nvidia settings menu,
       # accessible via `nvidia-settings`.
@@ -824,20 +834,37 @@ table ip6 filter {
     openssh.enable = true;
   };
 
-  systemd = {
-
-    # systemd service to activate LVM volumes
-    services."lvm" = {
-      wantedBy = [ "multi-user.target" ];
-      after = [ "local-fs.target" ];
-      unitConfig = {
-        Description = "Activate LVM volumes";
+  specialisation = {
+    on-the-go.configuration = {
+      system.nixos.tags = [ "on-the-go" ];
+      # Completely disable the discrete Nvidia GPU for the on-the-go configuration. Save maximum power...
+      hardware.nvidia = {
+        prime.offload.enable = lib.mkForce false;
+        prime.offload.enableOffloadCmd = lib.mkForce false;
+        prime.sync.enable = lib.mkForce false;
+        powerManagement.enable = false;
+        powerManagement.finegrained = false;
       };
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = "${pkgs.lvm2.bin}/bin/lvm vgchange -ay";
-      };
+      boot.extraModprobeConfig =''
+blacklist nouveau
+options nouveau modeset=0
+'';
+  
+services.udev.extraRules = ''
+  # Remove NVIDIA USB xHCI Host Controller devices, if present
+  ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{class}=="0x0c0330", ATTR{power/control}="auto", ATTR{remove}="1"
+  # Remove NVIDIA USB Type-C UCSI devices, if present
+  ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{class}=="0x0c8000", ATTR{power/control}="auto", ATTR{remove}="1"
+  # Remove NVIDIA Audio devices, if present
+  ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{class}=="0x040300", ATTR{power/control}="auto", ATTR{remove}="1"
+  # Remove NVIDIA VGA/3D controller devices
+  ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{class}=="0x03[0-9]*", ATTR{power/control}="auto", ATTR{remove}="1"
+'';
+boot.blacklistedKernelModules = [ "nouveau" "nvidia" "nvidia_drm" "nvidia_modeset" "nvidia_uvm" "nvidia_wmi_ec_backlight"];
     };
+  };
+
+  systemd = {
 
     services.lockBoot = {
       description = "Manage the encrypted /boot partition";
@@ -904,7 +931,6 @@ table ip6 filter {
 
     services."set-lvm-readahead" = {
       description = "Set read-ahead for LVM LV to optimize performance";
-      after = [ "lvm.service" ];
       wants = [ "local-fs.target" ];
       path = [ pkgs.lvm2 ];
       script = ''
