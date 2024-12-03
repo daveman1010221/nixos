@@ -30,7 +30,6 @@
 
     #kernelModules = [ ];
     #kernelPackages = pkgs.linuxPackages_6_11;
-      #"security=selinux"
     kernelParams = [
       "i8042.unlock"
       "intel_idle.max_cstate=4"
@@ -44,6 +43,7 @@
       "zswap.enabled=1"
       "zswap.max_pool_percent=10"
       "modprobe.blacklist=nouveau"
+      "security=selinux"
     ];
 
     kernelPatches = [
@@ -61,6 +61,12 @@
     ];
 
     kernel = {
+      # unprivileged_userns_clone is for applications to be able to implement
+      # sandboxing, since unprivileged user namespaces are disabled by default
+      # when using a hardened kernel.
+
+      # The net.ipv4 options are there to enable certain network operations
+      # inside of rootless containers.
       sysctl = {
         "net.ipv4.ip_unprivileged_port_start" = 0;
         "net.ipv4.ping_group_range" = "0 2147483647";
@@ -218,6 +224,34 @@
     };
   };
 
+  # Create and configure /etc/audit/auditd.conf
+  environment.etc."audit/auditd.conf".text = ''
+# /etc/audit/auditd.conf
+log_file = /var/log/audit/audit.log
+log_format = RAW
+flush = INCREMENTAL
+freq = 20
+num_logs = 5
+max_log_file = 8
+max_log_file_action = ROTATE
+space_left = 10%
+space_left_action = SYSLOG
+admin_space_left = 5%
+admin_space_left_action = SUSPEND
+disk_full_action = SUSPEND
+disk_error_action = SUSPEND
+plugin_dir = /etc/audit/plugins.d
+'';
+
+  environment.etc."audit/plugins.d/syslog.conf".text = ''
+active = yes
+direction = out
+path = ${pkgs.audit}/bin/audisp-syslog
+type = always
+format = string
+args = LOG_DEBUG 
+'';
+
   # System-wide package list
   environment.systemPackages = with pkgs; [
     audit
@@ -320,6 +354,8 @@
     pyenv
     python312Full
     python312Packages.jsonschema
+    # python312Packages.distutils # Required for selinux sandboxes
+    # python312Packages.distutils-extra # Also required for selinux sandboxes
     rootlesskit
     ripgrep
     ripgrep-all
@@ -363,7 +399,7 @@
     wasmer-pack
     wayland-utils
     wget
-    wl-clipboard
+    wl-clipboard-rs
     (hiPrio xwayland)
     xbindkeys
     xbindkeys-config
@@ -374,22 +410,27 @@
     # These are all selinux packages, if I ever have the time to figure this
     # out completely. For now, it's AppArmor, since that is mostly configured
     # for NixOS at this time.
-    # libselinux
-    # policycoreutils
-    # libsepol
-    # libsemanage
-    # checkpolicy
-    # semodule-utils
+    # UPDATE: AppArmor sucks on NixOS. Now we're back to making SELinux work...
+
+    libselinux
+    policycoreutils
+    libsepol
+    libsemanage
+    checkpolicy
+    semodule-utils
+    setools
+    # selinux-python <- Broken: Something about distutils not being present for python, even when I install it...
+    # selinux-sandbox <- Broken: Something about distutils not being present for python, even when I install it...
 
     # However, AppArmor is a bit more fully baked:
-    apparmor-parser
-    libapparmor
-    apparmor-utils
-    apparmor-profiles
-    apparmor-kernel-patches
-    #roddhjav-apparmor-rules
-    apparmor-pam
-    apparmor-bin-utils
+    # apparmor-parser
+    # libapparmor
+    # apparmor-utils
+    # apparmor-profiles
+    # apparmor-kernel-patches
+    # #roddhjav-apparmor-rules
+    # apparmor-pam
+    # apparmor-bin-utils
   ];
 
   environment.sessionVariables.COSMIC_DATA_CONTROL_ENABLED = 1;
@@ -1730,39 +1771,75 @@ end
   };
 
   security = {
+    # The "audit sub-system" must be enabled as a separate option from the
+    # "audit sub-system's daemon", which is necessary to have a fucking audit
+    # sub-system.
     auditd.enable = true;
 
-    apparmor = {
-      enableCache = true;
-      killUnconfinedConfinables = false;
+    audit = {
       enable = true;
 
-      # There are presently two sources of installable profiles,
-      # 'apparmor-profiles' and 'roddhjav-apparmor-rules', which you can view
-      # using: "nix-build '<nixpkgs>' -A apparmor-profiles", for example...
-      # Once you've decided which profiles you want and from which package,
-      # you can configure the profiles here:
-      policies = {
-        "firefox" = {
-          enable = true;
-          enforce = true;
-          profile = builtins.readFile "${pkgs.apparmor-profiles}/share/apparmor/extra-profiles/firefox";
-        };
-        # "cupsd" = {
-        #     enable = true;
-        #     enforce = true;
-        #     profile = ''
-        #     '';
-        # };
-      };
+      backlogLimit = 8192;
+
+      failureMode = "printk";
+
+      rateLimit = 1000;
+
+      # Define audit rules
+      rules = [
+        "-D"
+        "-b 8192"
+        "-f 2"
+        "-a always,exit -F arch=b64 -F path=/etc/passwd -F perm=wa -F key=auth_changes"
+        "-a always,exit -F arch=b64 -F path=/etc/group -F perm=wa -F key=auth_changes"
+        "-a always,exit -F arch=b64 -F path=/etc/shadow -F perm=wa -F key=auth_changes"
+        "-a always,exit -F arch=b64 -F path=/etc/sudoers -F perm=wa -F key=auth_changes"
+        "-a always,exit -F arch=b64 -S execve -k exec_commands"
+        "-a always,exit -F arch=b64 -S unlink,unlinkat,rename,renameat,rmdir -F auid>=1000 -F auid!=unset -k file_deletions"
+        "-a always,exit -F arch=b64 -S open,openat,openat2 -F exit=-EACCES -k access"
+        "-a always,exit -F arch=b64 -S open,openat,openat2 -F exit=-EPERM -k access"
+        "-e 1"
+        "-e 2"
+      ];
     };
+
+    # apparmor = {
+    #   enableCache = true;
+    #   killUnconfinedConfinables = false;
+    #   enable = true;
+
+    #   # There are presently two sources of installable profiles,
+    #   # 'apparmor-profiles' and 'roddhjav-apparmor-rules', which you can view
+    #   # using: "nix-build '<nixpkgs>' -A apparmor-profiles", for example...
+    #   # Once you've decided which profiles you want and from which package,
+    #   # you can configure the profiles here:
+    #   policies = {
+    #     "firefox" = {
+    #       enable = true;
+    #       enforce = true;
+    #       profile = builtins.readFile "${pkgs.apparmor-profiles}/share/apparmor/extra-profiles/firefox";
+    #     };
+    #     # "cupsd" = {
+    #     #     enable = true;
+    #     #     enforce = true;
+    #     #     profile = ''
+    #     #     '';
+    #     # };
+    #   };
+    # };
 
     doas = {
       enable = true;
       wheelNeedsPassword = true;
     };
 
-    pam.services.djshepard.enableAppArmor = true;
+    # Configure PAM audit settings for specific services if necessary
+    pam.services.login = {
+      ttyAudit.enable = true;
+      setLoginUid = true;
+    };
+
+    # pam.services.djshepard.enableAppArmor = true;
   };
 
   services = {
@@ -1808,7 +1885,7 @@ end
       };
     };
 
-    dbus.apparmor = "enabled";
+    # dbus.apparmor = "enabled";
 
     desktopManager.cosmic.enable = true;
     displayManager.cosmic-greeter.enable = true;
@@ -1881,9 +1958,12 @@ end
   specialisation = {
     on-the-go.configuration = {
       system.nixos.tags = [ "on-the-go" ];
-      # Completely disable the discrete Nvidia GPU for the on-the-go configuration. Save maximum power...
-      # TODO: For on-the-go, if disabling the discrete GPU, also rewrite the kernel command line parameters to remove superfluous nvidia options.
-      # TODO: Consider using a hardened kernel for on-the-go, as well, since it works without nvidia drivers.
+      # Completely disable the discrete Nvidia GPU for the on-the-go
+      # configuration. Save maximum power...
+      # TODO: For on-the-go, if disabling the discrete GPU, also rewrite the
+      # kernel command line parameters to remove superfluous nvidia options.
+      # TODO: Consider using a hardened kernel for on-the-go, as well, since it
+      # works without nvidia drivers.
       hardware.nvidia = {
         prime.offload.enable = lib.mkForce false;
         prime.offload.enableOffloadCmd = lib.mkForce false;
@@ -1911,6 +1991,24 @@ boot.blacklistedKernelModules = [ "nouveau" "nvidia" "nvidia_drm" "nvidia_modese
   };
 
   systemd = {
+
+    # Override the auditd systemd service, so that we can actually configured
+    # the daemon.
+    # services.auditd = {
+    #   description = "Linux Audit daemon";
+
+    #   wantedBy = [ "sysinit.target" ];
+    #   after = [ "local-fs.target" "systemd-tmpfiles-setup.service" ];
+    #   before = [ "sysinit.target" "shutdown.target" ];
+    #   conflicts = [ "shutdown.target" ];
+
+    #   environment = {
+    #     LOCALE_ARCHIVE = "${pkgs.glibcLocales}/lib/locale/locale-archive";
+    #     TZDIR = "${pkgs.tzdata}/share/zoneinfo";
+    #   };
+
+    #   preStart = "${pkgs.coreutils}/bin/mkdir -p /var/log/audit";
+    # };
 
     services.lockBoot = {
       description = "Manage the encrypted /boot partition";
@@ -2111,5 +2209,5 @@ EOF
   # For more information, see `man configuration.nix` or https://nixos.org/manual/nixos/stable/options#opt-system.stateVersion .
   system.stateVersion = "24.05"; # Did you read the comment?
 
-  #systemd.package = pkgs.systemd.override { withSelinux = true; };
+  systemd.package = pkgs.systemd.override { withSelinux = true; };
 }
