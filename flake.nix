@@ -402,6 +402,7 @@
                 networkmanager-vpnc
                 nftables
                 nix-index
+                nix-prefetch-git
                 nixd
                 nvidia-container-toolkit
                 nvtopPackages.intel
@@ -412,9 +413,11 @@
                 podman-compose
                 podman-desktop
                 protonvpn-gui
+                protonvpn-cli_2
                 pwgen
                 pyenv
-                python312Full
+                python314Full
+                qmk
                 # python312Packages.jsonschema
                 rootlesskit
                 ripgrep
@@ -435,6 +438,7 @@
                 tmux
                 tree
                 tree-sitter
+                usbutils
                 (vscode-with-extensions.override {
                   vscodeExtensions = with vscode-extensions; [
                     bbenoist.nix
@@ -459,6 +463,11 @@
                 wasmer-pack
                 wayland-utils
                 wget
+                wine64                                      # support 64-bit only
+                wineWowPackages.staging                     # wine-staging (version with experimental features)
+                winetricks                                  # winetricks (all versions)
+                wineWowPackages.waylandFull                 # native wayland support (unstable)
+                bottles                                     # a wine prefix UI
                 wl-clipboard-rs
                 (hiPrio xwayland)
                 xbindkeys
@@ -502,6 +511,8 @@
 
             hardware = {
               graphics.enable = true;
+
+              keyboard.qmk.enable = true; # Effectively, this option adds udev rules that allow a non-privileged user to modify keyboard firmware.
 
               bluetooth = {
                 enable = true;
