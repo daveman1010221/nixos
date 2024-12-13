@@ -1276,6 +1276,7 @@
                   end
                   
                   function mount_boot --description "Mount the encrypted /boot and /boot/EFI partitions using Nix expressions"
+                      pushd /etc/nixos
                       # Extract encrypted device path using Nix expressions
                       set encrypted_device (nix eval --impure --raw '.#nixosConfigurations.precisionws.config.boot.initrd.luks.devices."boot_crypt".device')
                       if test -z "$encrypted_device"
@@ -1307,7 +1308,7 @@
                       end
                   
                       # Extract device path for /boot/EFI using Nix expressions
-                      set efi_device (nix eval --impure --raw '.#nixosConfigurations.precisionws.config.boot.initrd.luks.devices."boot_crypt".device')
+                      set efi_device (nix eval --impure --raw '.#nixosConfigurations.precisionws.config.fileSystems."/boot/EFI".device')
                       if test -z "$efi_device"
                           echo "Could not retrieve /boot/EFI device path from NixOS configuration."
                           return 1
@@ -1329,6 +1330,7 @@
                       end
                   
                       echo "Boot partitions have been mounted successfully."
+                      popd
                   end
                   
                   function unmount_boot
@@ -1445,7 +1447,9 @@
                   
                       # Run nixos-rebuild switch
                       echo "Running nixos-rebuild switch..."
+                      pushd /etc/nixos
                       sudo nixos-rebuild switch
+                      popd
                       set rebuild_status $status
                   
                       # After rebuild, if boot was not mounted before, unmount it
