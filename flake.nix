@@ -407,6 +407,7 @@
                 nvidia-container-toolkit
                 nvtopPackages.intel
                 openssl
+                pandoc
                 parted
                 pciutils
                 podman
@@ -457,6 +458,7 @@
                 })
                 viu
                 vkmark
+                vulkan-tools
                 wasm-pack
                 wasmtime
                 wordbook
@@ -579,7 +581,7 @@
                 table ip mytable {
                     set inbound_whitelist {
                         type inet_service
-                        elements = { 22, 8080 }
+                        elements = { 22, 8080, 4173 }
                     }
 
                     set vpn_ports {
@@ -594,7 +596,7 @@
                         tcp dport @inbound_whitelist ct state new accept
                         jump sig_filter_both
                         jump sig_filter_input
-                        iifname "wlp0s20f3" ip saddr { 172.26.0.0/16, 192.168.1.0/24 } accept
+                        iifname "wlp0s20f3" ip saddr { 172.0.0.0/8, 192.168.1.0/24 } accept
                         ip protocol icmp limit rate 10/second burst 20 packets accept
                         log prefix "INPUT-DROP: " level debug flags all counter packets 0 bytes 0 drop
                     }
@@ -607,10 +609,11 @@
                         tcp dport @vpn_ports accept
                         tcp dport { 7770, 8443 } accept
                         tcp dport 8080 accept # Allow outbound traffic on port 8080
+                        tcp dport 4173 accept # Allow outbound traffic on port 4173
                         oifname "lo" accept
                         jump sig_filter_both
                         jump sig_filter_output
-                        oifname "wlp0s20f3" ip daddr { 172.26.0.0/16, 192.168.1.0/24 } accept
+                        oifname "wlp0s20f3" ip daddr { 172.0.0.0/8, 192.168.1.0/24 } accept
                         oifname "tun0" accept
                         ip protocol icmp limit rate 10/second burst 20 packets accept
                         log prefix "OUTPUT-DROP: " level debug flags all counter packets 12 bytes 738 drop
@@ -621,8 +624,10 @@
                         ct state established,related accept
                         # Allow traffic from Docker containers to the outside world on port 8080
                         iifname "docker0" tcp dport 8080 oifname != "docker0" accept
+                        iifname "docker0" tcp dport 4173 oifname != "docker0" accept
                         # Allow traffic to Docker containers from the outside world on port 8080
                         iifname != "docker0" tcp dport 8080 oifname "docker0" accept
+                        iifname != "docker0" tcp dport 4173 oifname "docker0" accept
                         # Allow bridged traffic
                         iifname "br0" oifname "br0" accept
                         ip protocol icmp limit rate 10/second burst 20 packets accept
@@ -637,7 +642,7 @@
 
                     chain postrouting {
                         type nat hook postrouting priority srcnat; policy accept;
-                        ip saddr 172.17.0.0/16 oifname != "docker0" masquerade
+                        ip saddr 172.0.0.0/8 oifname != "docker0" masquerade
                         oifname "tun0" masquerade
                     }
 
