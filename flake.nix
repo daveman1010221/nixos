@@ -62,6 +62,24 @@
                 #     ];
                 #   });
                 # })
+
+                # This override was created to fix a problem with bottles, which now works without this.
+                # (self: super: {
+                #   python3Packages = super.python3Packages.override {
+                #     overrides = (pySelf: pyPrev: {
+                #       patool = pyPrev.patool.overrideAttrs (oldAttrs: {
+                #         # Keep doCheck = oldAttrs.doCheck or true
+                #         doCheck = true;  # Let the rest of the tests run normally
+                # 
+                #         postPatch = (oldAttrs.postPatch or "") + ''
+                #           echo "Patching out the failing test_nested_gzip..."
+                #           # Rename 'test_nested_gzip' so it never runs
+                #           sed -i 's:def test_nested_gzip:def skip_nested_gzip:' tests/test_mime.py
+                #         '';
+                #       });
+                #     });
+                #   };
+                # })
               ];
 
               config = {
@@ -96,10 +114,9 @@
               # This bug-checks when GDM tries to initialize the external Nvidia display,
               # so clearly some sort of issue with the Nvidia driver and the hardened
               # kernel. It works fine for 'on the go' config, though. Considering making two kernel configs.
-              kernelPackages = pkgs.linuxPackages_6_11_hardened;
+              kernelPackages = pkgs.linuxPackages_6_12_hardened;
 
               #kernelModules = [ ];
-              #kernelPackages = pkgs.linuxPackages_6_11;
               kernelParams = [
                 "i8042.unlock"
                 "intel_idle.max_cstate=4"
@@ -326,6 +343,7 @@
                 buildkit
                 cheese
                 clamav
+                clangStdenv
                 cl-wordle
                 cni-plugins
                 containerd
@@ -343,7 +361,7 @@
                 efibootmgr
                 efitools
                 efivar
-                epsonscan2
+                #epsonscan2
                 eza
                 fd
                 file
@@ -382,8 +400,8 @@
                 kitty-themes
                 libcanberra-gtk3
                 libreoffice-fresh
-                #llvmPackages_19.clangUseLLVM
-                #llvmPackages_19.libunwind
+                llvmPackages_19.clangUseLLVM
+                clang_19
                 lolcat
                 lshw
                 lsof
@@ -408,6 +426,7 @@
                 nvtopPackages.intel
                 openssl
                 pandoc
+                patool
                 parted
                 pciutils
                 podman
@@ -418,14 +437,13 @@
                 psmisc
                 pwgen
                 pyenv
-                python314Full
+                python312Full
                 qmk
-                # python312Packages.jsonschema
                 rootlesskit
                 ripgrep
                 ripgrep-all
                 seahorse
-                servo
+                #servo
                 signal-desktop
                 simple-scan
                 slirp4netns
@@ -478,6 +496,7 @@
                 yaru-theme
                 zed-editor
                 zellij
+                zoom-us
 
                 # However, AppArmor is a bit more fully baked:
                 # apparmor-parser
@@ -515,7 +534,9 @@
             hardware = {
               graphics.enable = true;
 
-              keyboard.qmk.enable = true; # Effectively, this option adds udev rules that allow a non-privileged user to modify keyboard firmware.
+              # Effectively, this option adds udev rules that allow a
+              # non-privileged user to modify keyboard firmware.
+              keyboard.qmk.enable = true;
 
               bluetooth = {
                 enable = true;
@@ -559,7 +580,7 @@
 
                 # Optionally, you may need to select the appropriate driver version for
                 # your specific GPU.
-                package = config.boot.kernelPackages.nvidiaPackages.stable;
+                package = config.boot.kernelPackages.nvidiaPackages.beta;
               };
 
               nvidia-container-toolkit = {
@@ -1280,8 +1301,8 @@
                   function man --description="Get the page, man"
                       ${pkgs.man}/bin/man $argv | bat --language man --style plain
                   end
-                  
-                  function mount_boot --description "Mount the encrypted /boot and /boot/EFI partitions using Nix expressions"
+
+                  function mount_boot --description 'Mount the encrypted /boot and /boot/EFI partitions using Nix expressions'
                       pushd /etc/nixos
                       # Extract encrypted device path using Nix expressions
                       set encrypted_device (nix eval --impure --raw '.#nixosConfigurations.precisionws.config.boot.initrd.luks.devices."boot_crypt".device')
@@ -1297,20 +1318,28 @@
                           return 1
                       end
                   
-                      # Open the encrypted boot partition
-                      echo "Opening encrypted boot partition..."
-                      sudo cryptsetup luksOpen "$encrypted_device_physical" boot_crypt
-                      if test $status -ne 0
-                          echo "Failed to open encrypted boot partition."
-                          return 1
+                      # Check if boot_crypt is already open
+                      if test -e /dev/mapper/boot_crypt
+                          echo "Encrypted boot device is already open. Skipping luksOpen..."
+                      else
+                          echo "Opening encrypted boot partition..."
+                          sudo cryptsetup luksOpen "$encrypted_device_physical" boot_crypt
+                          if test $status -ne 0
+                              echo "Failed to open encrypted boot partition."
+                              return 1
+                          end
                       end
                   
-                      # Mount /boot from the decrypted device
-                      echo "Mounting /boot..."
-                      sudo mount /dev/mapper/boot_crypt /boot
-                      if test $status -ne 0
-                          echo "Failed to mount /boot."
-                          return 1
+                      # Mount /boot if not already mounted
+                      if mountpoint -q /boot
+                          echo "/boot is already mounted. Skipping mount..."
+                      else
+                          echo "Mounting /boot..."
+                          sudo mount /dev/mapper/boot_crypt /boot
+                          if test $status -ne 0
+                              echo "Failed to mount /boot."
+                              return 1
+                          end
                       end
                   
                       # Extract device path for /boot/EFI using Nix expressions
@@ -1327,12 +1356,16 @@
                           return 1
                       end
                   
-                      # Mount /boot/EFI
-                      echo "Mounting /boot/EFI..."
-                      sudo mount "$efi_device_physical" /boot/EFI
-                      if test $status -ne 0
-                          echo "Failed to mount /boot/EFI."
-                          return 1
+                      # Mount /boot/EFI if not already mounted
+                      if mountpoint -q /boot/EFI
+                          echo "/boot/EFI is already mounted. Skipping mount..."
+                      else
+                          echo "Mounting /boot/EFI..."
+                          sudo mount "$efi_device_physical" /boot/EFI
+                          if test $status -ne 0
+                              echo "Failed to mount /boot/EFI."
+                              return 1
+                          end
                       end
                   
                       echo "Boot partitions have been mounted successfully."
@@ -1434,12 +1467,12 @@
                       end
                   end
                   
-                  function nixos_update --description="Update NixOS configuration with automatic boot mount handling"
+                  function nixos_update --description 'Update NixOS configuration with automatic boot mount handling'
                       # Check if boot is mounted
                       boot_is_mounted "quiet"
-                      set boot_was_mounted $status
+                      set -l boot_was_mounted $status
                   
-                      # If boot is not mounted, mount it
+                      # If boot was not mounted originally, mount it now
                       if test $boot_was_mounted -ne 0
                           echo "Boot volumes are not fully mounted. Mounting them now..."
                           boot_toggle_mounts
@@ -1458,19 +1491,19 @@
                       popd
                       set rebuild_status $status
                   
-                      # After rebuild, if boot was not mounted before, unmount it
+                      # After the rebuild, unmount only if we mounted them in this function
                       if test $boot_was_mounted -ne 0
-                          echo "Unmounting boot volumes..."
+                          echo "Unmounting boot volumes (since they were not mounted originally)."
                           boot_toggle_mounts
                           if test $status -ne 0
                               echo "Failed to unmount boot volumes."
-                              # Optionally, handle the error
+                              # Optionally handle the error here
                           end
                       else
-                          echo "Boot volumes remain mounted."
+                          echo "WARNING: Boot volumes remain mounted."
                       end
                   
-                      # Return the status of nixos-rebuild
+                      # Return nixos-rebuild's status
                       return $rebuild_status
                   end
                   
@@ -1620,7 +1653,7 @@
                   end
                   
                   # TODO: make sure this is still correct. This is used for updatedb, I seem to recall.
-                  set -gx PRUNEPATHS /dev /proc /sys /run /media /backups /data /keys /lost+found /nix /sys /tmp
+                  set -gx PRUNEPATHS /dev /proc /sys /media /mnt /lost+found /nix /sys /tmp
                   
                   # For scripting code automation tasks.
                   set -gx CODE_ROOT $CURRENT_USER_HOME/Documents/projects/codes
@@ -1901,11 +1934,17 @@
             };
             
             services = {
-              avahi = {  # Necessary for CUPS local network printer discovery, probably some other stuff, too.
+              # Necessary for CUPS local network printer discovery, probably
+              # some other stuff, too.
+              avahi = {
                 wideArea = true;  # Not sure about this one yet, but true is the default.
-                publish.enable = false;  # Just don't publish unnecessarily.
-                publish.domain = false;  # Don't announce yourself on the local network unless needed.
-                publish.addresses = false;  # Publish all local IP addresses. I assume this means only those of allowed interfaces.
+                publish.enable = false;  # Don't publish unnecessarily.
+                publish.domain = false;  # Don't announce yourself on the LAN unless needed.
+
+                # Publish all local IP addresses. I assume this means only
+                # those of allowed interfaces.
+                publish.addresses = false;
+
                 allowInterfaces = [ "wlp0s20f3" ];
                 allowPointToPoint = false;
                 domainName = "local";
@@ -1973,13 +2012,13 @@
           
               # firmware update daemon
               fwupd.enable = true;
-              #fwupd.package = pkgs.fwupd-efi;
           
               printing = {
                 allowFrom = [ "localhost" ];
                 browsing = false;
                 defaultShared = false;
-                drivers = with pkgs; [ gutenprint epson-escpr epson-escpr2 ];
+                #drivers = with pkgs; [ gutenprint epson-escpr epson-escpr2 ];
+                drivers = with pkgs; [ gutenprint ];
                 enable = true;
                 listenAddresses = [ "localhost:631" ];
                 logLevel = "debug";
