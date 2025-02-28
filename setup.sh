@@ -74,7 +74,7 @@ done
 # Ensure OpenSSL is installed
 if ! command -v openssl &>/dev/null; then
     echo -e "\033[1;34m[INFO]\033[0m Installing OpenSSL..."
-    if ! nix profile install nixpkgs#openssl; then
+    if ! nix profile install nixpkgs#openssl --extra-experimental-features nix-command --extra-experimental-features flakes; then
         echo -e "\033[1;31m[ERROR]\033[0m Failed to install OpenSSL! Check your Nix setup."
         exit 1
     fi
@@ -248,6 +248,9 @@ for lv in root var home tmp swap; do
         echo -e "\033[1;32m[OK]\033[0m LVM volume nix/$lv exists."
     fi
 done
+
+echo -e "\033[1;34m[INFO]\033[0m Waiting for LVM volumes to settle..."
+sleep 3
 
 # Verify all required mounts
 REQUIRED_MOUNTS=( "tmp" "var" "home" "boot" "boot/EFI")
