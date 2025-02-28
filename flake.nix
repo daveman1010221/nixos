@@ -182,7 +182,7 @@
                   devices = {
                     boot_crypt = {
                       # sdb2 UUID (pre-luksOpen)
-                      device = "/dev/disk/by-uuid/ed470d64-56da-4624-8080-bc736a64e27f";
+                      device = "PLACEHOLDER_BOOT_UUID";
                       preLVM = true;
                       allowDiscards = true;
                       # Custom mount commands for the unencrypted /boot, included in the initrd
@@ -231,7 +231,7 @@
                     # Configuration for NVMe devices with detached headers and keys on encrypted /boot
                     # EDIT
                     nvme0n1_crypt = {
-                      device = "/dev/disk/by-id/nvme-eui.ace42e00310a1b372ee4ac0000000001";
+                      device = "PLACEHOLDER_NVME0";
                       header = "/sensitive/keys/nvme0n1.header";
                       keyFile = "/sensitive/keys/nvme0n1.key";
                       allowDiscards = true;
@@ -245,7 +245,7 @@
 
                     # EDIT
                     nvme1n1_crypt = {
-                      device = "/dev/disk/by-id/nvme-eui.ace42e00310a1b382ee4ac0000000001";
+                      device = "PLACEHOLDER_NVME1";
                       header = "/sensitive/keys/nvme1n1.header";
                       keyFile = "/sensitive/keys/nvme1n1.key";
                       allowDiscards = true;
@@ -517,7 +517,7 @@
               # dm0 UUID (post-luksOpen)
               # EDIT
               "/boot" =
-                { device = "/dev/disk/by-uuid/5b605f2d-f67f-4744-8f36-046e2d55bfb9";
+                { device = "PLACEHOLDER_BOOT_FS_UUID";
                   fsType = "ext4";
                   neededForBoot = true;
                 };
@@ -525,7 +525,7 @@
               # UUID
               # EDIT
               "/boot/EFI" =
-                { device = "/dev/disk/by-uuid/7EF5-FFA3";
+                { device = "PLACEHOLDER_EFI_FS_UUID";
                   fsType = "vfat";
                   options = [ "umask=0077" ]; # Ensure proper permissions for the EFI partition
                 };
