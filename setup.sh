@@ -249,20 +249,40 @@ for lv in root var home tmp swap; do
     fi
 done
 
-echo -e "\033[1;34m[INFO]\033[0m Waiting for LVM volumes to settle..."
-sleep 3
+echo -e "\033[1;34m[INFO]\033[0m Waiting for all LVM volumes to settle..."
+REQUIRED_MOUNTS=("tmp" "var" "home" "boot" "boot/EFI")
 
-# Verify all required mounts
-REQUIRED_MOUNTS=( "tmp" "var" "home" "boot" "boot/EFI")
+# Wait for up to 10 seconds for all required mounts
+for i in {1..10}; do
+    MISSING_MOUNTS=()
 
-for mountpoint in "/mnt/${REQUIRED_MOUNTS[@]}"; do
-    if ! mount | grep -q "on ${mountpoint} "; then
-        echo -e "\033[1;31m[ERROR]\033[0m ${mountpoint} is NOT mounted!"
-        exit 1
-    else
-        echo -e "\033[1;32m[OK]\033[0m ${mountpoint} is mounted."
+    for mountpoint in "${REQUIRED_MOUNTS[@]}"; do
+        if ! findmnt -r "/mnt/$mountpoint" >/dev/null; then
+            MISSING_MOUNTS+=("$mountpoint")
+        fi
+    done
+
+    if [ ${#MISSING_MOUNTS[@]} -eq 0 ]; then
+        echo -e "\033[1;32m[OK]\033[0m All required filesystems are mounted."
+        break
+    fi
+
+    echo -e "\033[1;33m[WAITING]\033[0m Still waiting for: ${MISSING_MOUNTS[*]}... retrying in 1 second."
+    sleep 1
+done
+
+# Final hard check to fail if any mounts are still missing
+MISSING_FINAL=()
+for mountpoint in "${REQUIRED_MOUNTS[@]}"; do
+    if ! findmnt -r "/mnt/$mountpoint" >/dev/null; then
+        MISSING_FINAL+=("$mountpoint")
     fi
 done
+
+if [ ${#MISSING_FINAL[@]} -ne 0 ]; then
+    echo -e "\033[1;31m[ERROR]\033[0m The following mount points are still missing: ${MISSING_FINAL[*]}"
+    exit 1
+fi
 
 echo -e "\033[1;34m[INFO]\033[0m All devices, filesystems, and mounts are correctly set up."
 
@@ -296,7 +316,7 @@ mv /mnt/etc/hardware-configuration.nix.bak /mnt/etc/nixos/hardware-configuration
 echo -e "\033[1;34m[INFO]\033[0m Extracting hardware-specific details for flake configuration..."
 
 # Get UUIDs for LUKS devices and filesystems
-boot_uuid=$(blkid -s UUID -o value /dev/${DEFAULT_BOOT}2)      # Returns a UUID
+boot_uuid=$(blkid -s UUID -o value ${DEFAULT_BOOT}2)      # Returns a UUID
 boot_fs_uuid=$(blkid -s UUID -o value /dev/mapper/boot_crypt)  # Returns a UUID
 efi_fs_uuid=$(blkid -s UUID -o value ${EFI_PARTITION})
 
