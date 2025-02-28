@@ -176,46 +176,50 @@ mdadm --create --verbose /dev/md0 --level=0 --raid-devices=2 --chunk=512K /dev/m
 ### CREATING LVM ###
 echo -e "\033[1;34m[INFO]\033[0m Creating LVM structure..."
 
-# 1️⃣ Create the Physical Volume
+# 1️⃣  Create the Physical Volume
 pvcreate /dev/md0 || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create Physical Volume!"; exit 1; }
 
-# 2️⃣ Create the Volume Group
+# 2️⃣  Create the Volume Group
 vgcreate -s 16M nix /dev/md0 || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create Volume Group!"; exit 1; }
 
-# 3️⃣ Create Logical Volumes
+# 3️⃣  Create Logical Volumes
 lvcreate -L 96G  -n swap nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create swap LV!"; exit 1; }
 lvcreate -L 20G  -n tmp  nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create tmp LV!"; exit 1; }
 lvcreate -L 120G -n var  nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create var LV!"; exit 1; }
 lvcreate -L 200G -n root nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create root LV!"; exit 1; }
 lvcreate -L 200G -n home nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create home LV!"; exit 1; }
 
-# 4️⃣ Verify LVM setup
+# 4️⃣  Verify LVM setup
 echo -e "\033[1;34m[INFO]\033[0m Verifying LVM setup..."
 vgdisplay nix
 lvdisplay nix
 
-# 5️⃣ Format Logical Volumes with EXT4
+# 5️⃣  Format Logical Volumes with EXT4
 echo -e "\033[1;34m[INFO]\033[0m Formatting Logical Volumes with EXT4..."
 mkfs.ext4 -O ^has_journal -E stride=128,stripe-width=256 /dev/nix/tmp  || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format tmp LV!"; exit 1; }
 mkfs.ext4 -O ^has_journal -E stride=128,stripe-width=256 /dev/nix/var  || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format var LV!"; exit 1; }
 mkfs.ext4 -O ^has_journal -E stride=128,stripe-width=256 /dev/nix/root || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format root LV!"; exit 1; }
 mkfs.ext4 -O ^has_journal -E stride=128,stripe-width=256 /dev/nix/home || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format home LV!"; exit 1; }
 
-# 6️⃣ Configure Swap
+# 6️⃣  Configure Swap
 echo -e "\033[1;34m[INFO]\033[0m Configuring Swap..."
 mkswap /dev/nix/swap
 swapon /dev/nix/swap
 
-# 7️⃣ Mount Logical Volumes
+# 6.5 Unmount Boot and EFI (First step)
+echo -e "\033[1;34m[INFO]\033[0m Unmounting Boot and EFI..."
+umount ${BOOT_MOUNT}/EFI || true
+umount ${BOOT_MOUNT} || true
+
+# 7️⃣  Mount Logical Volumes (Now after Boot unmount)
 echo -e "\033[1;34m[INFO]\033[0m Mounting Logical Volumes..."
 mount /dev/nix/root /mnt || { echo -e "\033[1;31m[ERROR]\033[0m Failed to mount root!"; exit 1; }
 mkdir -p /mnt/tmp  && mount /dev/nix/tmp  /mnt/tmp
 mkdir -p /mnt/var  && mount /dev/nix/var  /mnt/var
 mkdir -p /mnt/home && mount /dev/nix/home /mnt/home
 
-# 8️⃣ Remount Boot and EFI
-umount ${BOOT_MOUNT}/EFI || true
-umount ${BOOT_MOUNT} || true
+# 8️⃣  Remount Boot and EFI
+echo -e "\033[1;34m[INFO]\033[0m Remounting Boot and EFI..."
 mkdir -p ${BOOT_MOUNT} && mount /dev/mapper/boot_crypt ${BOOT_MOUNT}
 mkdir -p ${BOOT_MOUNT}/EFI && mount ${EFI_PARTITION} ${BOOT_MOUNT}/EFI
 
@@ -341,8 +345,6 @@ MISSING_VALUES=0
 check_value "$boot_uuid" "Boot LUKS UUID"
 check_value "$boot_fs_uuid" "Boot Filesystem UUID"
 check_value "$efi_fs_uuid" "EFI Filesystem UUID"
-check_value "$nvme0_path" "NVMe0 Device Path"
-check_value "$nvme1_path" "NVMe1 Device Path"
 
 # If any values are missing, abort before modifying flake.nix
 if [[ $MISSING_VALUES -gt 0 ]]; then
