@@ -536,28 +536,28 @@
 
 	      "/" =
 	        {
-		  device = "/dev/mapper/nix-root";
+		  device = "PLACEHOLDER_ROOT";
 		  fsType = "f2fs";
 		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
 		};
 
 	      "/var" =
 	        {
-		  device = "/dev/mapper/nix-var";
+		  device = "PLACEHOLDER_VAR";
 		  fsType = "f2fs";
 		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
 		};
 
 	      "/tmp" =
 	        {
-		  device = "/dev/mapper/nix-tmp";
+		  device = "PLACEHOLDER_TMP";
 		  fsType = "f2fs";
 		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
 		};
 
 	      "/home" =
 	        {
-		  device = "/dev/mapper/nix-home";
+		  device = "PLACEHOLDER_HOME";
 		  fsType = "f2fs";
 		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
 		};

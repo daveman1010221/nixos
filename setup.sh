@@ -129,8 +129,8 @@ mkfs.vfat -v -F 32 ${EFI_PARTITION}
 
 ### ENCRYPTING /BOOT ###
 echo -e "\033[1;34m[INFO]\033[0m Encrypting /boot (You will be prompted for a passphrase)..."
-cryptsetup luksFormat --type luks1 --hash sha256 --key-size 256 --cipher aes-xts-essiv --pbkdf pbkdf2 --allow-discards --iter-time 500 ${BOOT_PARTITION}
-cryptsetup luksOpen ${BOOT_PARTITION} boot_crypt
+cryptsetup luksFormat --type luks1 --hash sha256 --key-size 256 --cipher aes-xts-plain64 --pbkdf pbkdf2 --iter-time 500 ${BOOT_PARTITION}
+cryptsetup luksOpen --allow-discards ${BOOT_PARTITION} boot_crypt
 
 ### FORMATTING & MOUNTING /BOOT ###
 echo -e "\033[1;34m[INFO]\033[0m Formatting and mounting encrypted /boot..."
@@ -157,8 +157,8 @@ for device in "${DEV_BLOCKS[@]}"; do
         confirm "Do you want to reformat and erase the encryption?"
     fi
     dd if=/dev/zero of=/dev/${device} bs=1M count=512 status=progress
-    cryptsetup luksFormat --type luks2 --cipher aes-xts-essiv --key-size 256 --hash sha256 --allow-discards --key-file ${KEYS_DIR}/${device}.key --header ${KEYS_DIR}/${device}.header /dev/${device}
-    cryptsetup luksOpen --key-file ${KEYS_DIR}/${device}.key --header ${KEYS_DIR}/${device}.header /dev/${device} ${device}_crypt
+    cryptsetup luksFormat --type luks2 --cipher aes-xts-plain64 --key-size 256 --hash sha256 --key-file ${KEYS_DIR}/${device}.key --header ${KEYS_DIR}/${device}.header /dev/${device}
+    cryptsetup luksOpen --allow-discards --key-file ${KEYS_DIR}/${device}.key --header ${KEYS_DIR}/${device}.header /dev/${device} ${device}_crypt
 done
 
 ### CREATING RAID-0 ###
@@ -323,6 +323,10 @@ echo -e "\033[1;34m[INFO]\033[0m Extracting hardware-specific details for flake 
 boot_uuid=$(blkid -s UUID -o value ${DEFAULT_BOOT}2)      # Returns a UUID
 boot_fs_uuid=$(blkid -s UUID -o value /dev/mapper/boot_crypt)  # Returns a UUID
 efi_fs_uuid=$(blkid -s UUID -o value ${EFI_PARTITION})
+root_fs_uuid=$(findmnt -no UUID /mnt)
+var_fs_uuid=$(findmnt -no UUID /mnt/var)
+tmp_fs_uuid=$(findmnt -no UUID /mnt/tmp)
+home_fs_uuid=$(findmnt -no UUID /mnt/home)
 
 # Get persistent device paths
 nvme0_path=$(ls -l /dev/disk/by-id/ | awk '/nvme-eui.*nvme0n1/ {print "/dev/disk/by-id/" $9}' | head -n1)
@@ -361,6 +365,10 @@ sed -i "s|PLACEHOLDER_NVME1|${nvme1_path}|g" /mnt/etc/nixos/flake.nix
 sed -i "s|PLACEHOLDER_BOOT_UUID|/dev/disk/by-uuid/${boot_uuid}|g" /mnt/etc/nixos/flake.nix
 sed -i "s|PLACEHOLDER_BOOT_FS_UUID|/dev/disk/by-uuid/${boot_fs_uuid}|g" /mnt/etc/nixos/flake.nix
 sed -i "s|PLACEHOLDER_EFI_FS_UUID|/dev/disk/by-uuid/${efi_fs_uuid}|g" /mnt/etc/nixos/flake.nix
+sed -i "s|PLACEHOLDER_ROOT|/dev/disk/by-uuid/${root_fs_uuid}|g" /mnt/etc/nixos/flake.nix
+sed -i "s|PLACEHOLDER_VAR|/dev/disk/by-uuid/${var_fs_uuid}|g" /mnt/etc/nixos/flake.nix
+sed -i "s|PLACEHOLDER_TMP|/dev/disk/by-uuid/${tmp_fs_uuid}|g" /mnt/etc/nixos/flake.nix
+sed -i "s|PLACEHOLDER_HOME|/dev/disk/by-uuid/${home_fs_uuid}|g" /mnt/etc/nixos/flake.nix
 
 echo -e "\033[1;34m[INFO]\033[0m Flake configuration updated successfully!"
 
