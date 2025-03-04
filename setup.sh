@@ -31,13 +31,19 @@ function check_value() {
     fi
 }
 
-### CONFIGURATION
-
 ### IDENTIFY TARGET DRIVE ###
 echo -e "\033[1;34m[INFO]\033[0m Detecting available disks..."
 lsblk -o NAME,MODEL,SIZE,TYPE,MOUNTPOINT
 
-DEFAULT_BOOT=$(lsblk -dno NAME,SIZE | grep -v "nvme" | grep -v "loop" | sort -h -k2 | head -n 1 | awk '{print "/dev/" $1}')
+# Filter out crypt, nvme, and loop devices to avoid picking them accidentally
+DEFAULT_BOOT=$(
+  lsblk -dno NAME,SIZE \
+  | grep -vE 'crypt|nvme|loop' \
+  | sort -h -k2 \
+  | head -n 1 \
+  | awk '{print "/dev/" $1}'
+)
+
 if [[ -z "$DEFAULT_BOOT" ]]; then
     echo -e "\033[1;31m[ERROR]\033[0m Could not detect a valid boot drive!"
     exit 1
@@ -45,16 +51,9 @@ fi
 
 echo -e "\n\033[1;33m[WARNING]\033[0m The target boot drive is set to: \033[1;36m${DEFAULT_BOOT}\033[0m"
 echo "Detected details:"
-fdisk -l ${DEFAULT_BOOT} 2>/dev/null | grep "Disk ${DEFAULT_BOOT}"
+fdisk -l "${DEFAULT_BOOT}" 2>/dev/null | grep "Disk ${DEFAULT_BOOT}"
 
 confirm "Is this the correct drive? This will ERASE and REINSTALL your system! Type 'yes' to proceed."
-
-# Ensure the boot drive is not mounted before proceeding
-if mount | grep -q "${DEFAULT_BOOT}"; then
-    echo -e "\033[1;33m[WARNING]\033[0m ${DEFAULT_BOOT} is currently mounted. It must be unmounted before proceeding."
-    confirm "Unmount ${DEFAULT_BOOT} and continue?"
-    umount ${DEFAULT_BOOT}* || true
-fi
 
 BLOCK_01="nvme0n1"
 BLOCK_02="nvme1n1"
@@ -83,38 +82,85 @@ fi
 ### CLEANUP ANY PARTIAL STATE ###
 echo -e "\033[1;34m[INFO]\033[0m Ensuring all partitions, RAID, and LUKS devices are released..."
 
-# Unmount everything first
-echo -e "\033[1;34m[INFO]\033[0m Unmounting all filesystems..."
-mount | grep "/mnt" && umount -R /mnt || true
-mount | grep "${DEFAULT_BOOT}" && umount ${DEFAULT_BOOT}* || true
+# 1) Turn off all swap, if any
+echo -e "\033[1;34m[INFO]\033[0m Turning off swap (if active)..."
+swapoff -a || true
 
-# Close any open LUKS devices
-echo -e "\033[1;34m[INFO]\033[0m Checking for existing LUKS devices..."
-cryptsetup status boot_crypt &>/dev/null && cryptsetup luksClose boot_crypt || true
+# 2) Unmount everything under /mnt (including nested mounts like /mnt/boot, /mnt/boot/EFI, etc.)
+echo -e "\033[1;34m[INFO]\033[0m Unmounting all filesystems from /mnt..."
+if mount | grep -q "/mnt/"; then
+    umount -R /mnt || {
+        echo -e "\033[1;33m[WARNING]\033[0m Some /mnt submounts may still be busy. Forcing lazy unmount..."
+        umount -lR /mnt || true
+    }
+fi
 
-for device in "${DEV_BLOCKS[@]}"; do
-    if cryptsetup status ${device}_crypt &>/dev/null; then
-        echo -e "\033[1;34m[INFO]\033[0m Closing existing LUKS device: ${device}_crypt"
-        umount /dev/mapper/${device}_crypt* || true
-        cryptsetup luksClose ${device}_crypt || dmsetup remove ${device}_crypt || true
-    fi
-done
+# If your script sometimes mounts /mnt/boot or /mnt/boot/EFI separately, unmount them, too:
+if mount | grep -q "/mnt/boot/EFI"; then
+    umount /mnt/boot/EFI || umount -l /mnt/boot/EFI || true
+fi
+if mount | grep -q "/mnt/boot "; then
+    umount /mnt/boot || umount -l /mnt/boot || true
+fi
 
-# Stop any existing RAID arrays
+# 3) Remove LVM logical volumes and the volume group
+#    You have LVs named nix-root, nix-home, etc. So let's just remove them all
+#    forcibly, then remove the VG itself.
+
+echo -e "\033[1;34m[INFO]\033[0m Removing LVM volumes & volume group..."
+if vgs nix &>/dev/null; then
+    # Remove all logical volumes in the "nix" VG
+    lvremove -fy nix || true
+
+    # Remove the "nix" volume group entirely
+    vgremove -fy nix || true
+fi
+
+# 4) Stop and remove ANY active mdadm RAID arrays (like /dev/md0)
 echo -e "\033[1;34m[INFO]\033[0m Stopping RAID arrays..."
+mdadm --stop --scan || true
+
+# Double-check each /dev/md* in case it didn't get removed
 for array in $(ls /dev/md* 2>/dev/null || true); do
-    mdadm --stop "$array" || true
-    mdadm --remove "$array" || true
+    mdadm --stop "$array"   2>/dev/null || true
+    mdadm --remove "$array" 2>/dev/null || true
+    # Also zero superblock if it’s still recognized as an MD device
+    mdadm --zero-superblock "$array" 2>/dev/null || true
+    wipefs -a "$array"      2>/dev/null || true
 done
 
-# Deactivate any active LVM volume groups
-echo -e "\033[1;34m[INFO]\033[0m Deactivating LVM volumes..."
-vgs nix &>/dev/null && vgchange -an nix || true
+# 5) Close or remove ANY leftover device mapper nodes (LUKS, etc.)
+#    Because now LVM is gone, RAID is gone, they should not be "busy" anymore.
 
-# Ensure partitions are released
+echo -e "\033[1;34m[INFO]\033[0m Removing leftover device mapper entries..."
+
+function nuke_mapper_device() {
+    local mapper_name="$1"
+    if dmsetup info "$mapper_name" &>/dev/null; then
+        echo -e "\033[1;33m[WARNING]\033[0m Forcing removal of /dev/mapper/$mapper_name"
+
+        # If it's a LUKS device
+        if cryptsetup status "$mapper_name" &>/dev/null; then
+            cryptsetup luksClose "$mapper_name" 2>/dev/null || dmsetup remove -f "$mapper_name" || true
+        else
+            dmsetup remove -f "$mapper_name" || true
+        fi
+    fi
+}
+
+while read -r mapper_line; do
+    mapper_device=$(echo "$mapper_line" | awk '{print $1}')
+    # "No devices found" line is possible
+    [[ "$mapper_device" == "No" ]] && continue
+    nuke_mapper_device "$mapper_device"
+done < <(dmsetup ls 2>/dev/null || echo "")
+
+# 6) Finally, wipe the partition table on the DEFAULT_BOOT drive
 echo -e "\033[1;34m[INFO]\033[0m Wiping partition table on ${DEFAULT_BOOT}..."
-for i in {1..3}; do wipefs -a ${DEFAULT_BOOT} || true; done
-partprobe ${DEFAULT_BOOT} || echo "Reboot may be required."
+for i in {1..3}; do
+    wipefs -a "${DEFAULT_BOOT}" || true
+done
+partprobe "${DEFAULT_BOOT}" || echo "Reboot may be required."
 
 ### PARTITIONING ###
 echo -e "\033[1;34m[INFO]\033[0m Partitioning ${DEFAULT_BOOT}..."
@@ -157,8 +203,10 @@ for device in "${DEV_BLOCKS[@]}"; do
         confirm "Do you want to reformat and erase the encryption?"
     fi
     dd if=/dev/zero of=/dev/${device} bs=1M count=512 status=progress
-    cryptsetup luksFormat --type luks2 --cipher aes-xts-plain64 --key-size 256 --hash sha256 --key-file ${KEYS_DIR}/${device}.key --header ${KEYS_DIR}/${device}.header /dev/${device}
-    cryptsetup luksOpen --allow-discards --key-file ${KEYS_DIR}/${device}.key --header ${KEYS_DIR}/${device}.header /dev/${device} ${device}_crypt
+    cryptsetup luksFormat --type luks2 --cipher aes-xts-plain64 --key-size 256 --hash sha256 \
+      --key-file ${KEYS_DIR}/${device}.key --header ${KEYS_DIR}/${device}.header /dev/${device}
+    cryptsetup luksOpen --allow-discards --key-file ${KEYS_DIR}/${device}.key \
+      --header ${KEYS_DIR}/${device}.header /dev/${device} ${device}_crypt
 done
 
 ### CREATING RAID-0 ###
@@ -171,7 +219,8 @@ if [ -e /dev/md0 ]; then
 fi
 
 echo -e "\033[1;34m[INFO]\033[0m Creating RAID-0 array..."
-mdadm --create --verbose /dev/md0 --level=0 --raid-devices=2 --chunk=512K /dev/mapper/${BLOCK_01}_crypt /dev/mapper/${BLOCK_02}_crypt
+mdadm --create --verbose /dev/md0 --level=0 --raid-devices=2 --chunk=512K \
+    /dev/mapper/${BLOCK_01}_crypt /dev/mapper/${BLOCK_02}_crypt
 
 ### CREATING LVM ###
 echo -e "\033[1;34m[INFO]\033[0m Creating LVM structure..."
@@ -185,7 +234,7 @@ vgcreate -s 16M nix /dev/md0 || { echo -e "\033[1;31m[ERROR]\033[0m Failed to cr
 # 3️⃣  Create Logical Volumes
 lvcreate -L 96G  -n swap nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create swap LV!"; exit 1; }
 lvcreate -L 80G  -n tmp  nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create tmp LV!"; exit 1; }
-lvcreate -L 80G -n var  nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create var LV!"; exit 1; }
+lvcreate -L 80G  -n var  nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create var LV!"; exit 1; }
 lvcreate -L 200G -n root nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create root LV!"; exit 1; }
 lvcreate -L 500G -n home nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create home LV!"; exit 1; }
 
@@ -194,8 +243,8 @@ echo -e "\033[1;34m[INFO]\033[0m Verifying LVM setup..."
 vgdisplay nix
 lvdisplay nix
 
-# 5️⃣  Format Logical Volumes with EXT4
-echo -e "\033[1;34m[INFO]\033[0m Formatting Logical Volumes with EXT4..."
+# 5️⃣  Format Logical Volumes with F2FS
+echo -e "\033[1;34m[INFO]\033[0m Formatting Logical Volumes with F2FS..."
 mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum -z 512 /dev/nix/tmp  || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format tmp LV!"; exit 1; }
 mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum -z 512 /dev/nix/var  || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format var LV!"; exit 1; }
 mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum -z 512 /dev/nix/root || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format root LV!"; exit 1; }
@@ -211,7 +260,7 @@ echo -e "\033[1;34m[INFO]\033[0m Unmounting Boot and EFI..."
 umount ${BOOT_MOUNT}/EFI || true
 umount ${BOOT_MOUNT} || true
 
-# 7️⃣  Mount Logical Volumes (Now after Boot unmount)
+# 7️⃣  Mount Logical Volumes
 echo -e "\033[1;34m[INFO]\033[0m Mounting Logical Volumes..."
 mount /dev/nix/root /mnt || { echo -e "\033[1;31m[ERROR]\033[0m Failed to mount root!"; exit 1; }
 mkdir -p /mnt/tmp  && mount /dev/nix/tmp  /mnt/tmp
@@ -236,7 +285,7 @@ for device in "${DEV_BLOCKS[@]}"; do
 done
 
 # Check RAID status
-if ! cat /proc/mdstat | grep -q "md0"; then
+if ! grep -q "md0" /proc/mdstat; then
     echo -e "\033[1;31m[ERROR]\033[0m RAID array /dev/md0 is NOT active!"
     exit 1
 else
@@ -261,7 +310,7 @@ for i in {1..10}; do
     MISSING_MOUNTS=()
 
     for mountpoint in "${REQUIRED_MOUNTS[@]}"; do
-        if ! findmnt -r "/mnt/$mountpoint" >/dev/null; then
+        if ! findmnt -r "/mnt/$mountpoint" &>/dev/null; then
             MISSING_MOUNTS+=("$mountpoint")
         fi
     done
@@ -278,7 +327,7 @@ done
 # Final hard check to fail if any mounts are still missing
 MISSING_FINAL=()
 for mountpoint in "${REQUIRED_MOUNTS[@]}"; do
-    if ! findmnt -r "/mnt/$mountpoint" >/dev/null; then
+    if ! findmnt -r "/mnt/$mountpoint" &>/dev/null; then
         MISSING_FINAL+=("$mountpoint")
     fi
 done
@@ -320,8 +369,8 @@ mv /mnt/etc/hardware-configuration.nix.bak /mnt/etc/nixos/hardware-configuration
 echo -e "\033[1;34m[INFO]\033[0m Extracting hardware-specific details for flake configuration..."
 
 # Get UUIDs for LUKS devices and filesystems
-boot_uuid=$(blkid -s UUID -o value ${DEFAULT_BOOT}2)      # Returns a UUID
-boot_fs_uuid=$(blkid -s UUID -o value /dev/mapper/boot_crypt)  # Returns a UUID
+boot_uuid=$(blkid -s UUID -o value ${DEFAULT_BOOT}2)
+boot_fs_uuid=$(blkid -s UUID -o value /dev/mapper/boot_crypt)
 efi_fs_uuid=$(blkid -s UUID -o value ${EFI_PARTITION})
 root_fs_uuid=$(findmnt -no UUID /mnt)
 var_fs_uuid=$(findmnt -no UUID /mnt/var)
@@ -332,7 +381,6 @@ home_fs_uuid=$(findmnt -no UUID /mnt/home)
 nvme0_path=$(ls -l /dev/disk/by-id/ | awk '/nvme-eui.*nvme0n1/ {print "/dev/disk/by-id/" $9}' | head -n1)
 nvme1_path=$(ls -l /dev/disk/by-id/ | awk '/nvme-eui.*nvme1n1/ {print "/dev/disk/by-id/" $9}' | head -n1)
 
-# Ensure device paths are set before continuing
 if [[ -z "$nvme0_path" || -z "$nvme1_path" ]]; then
     echo -e "\033[1;31m[ERROR]\033[0m Failed to determine NVMe device paths!"
     echo "Check your system's device list manually and update flake.nix as needed."
@@ -344,13 +392,10 @@ HWC_PATH="/mnt/etc/nixos/hardware-configuration.nix"
 echo -e "\033[1;34m[INFO]\033[0m Verifying extracted values exist in hardware-configuration.nix..."
 
 MISSING_VALUES=0
-
-# Check each value
 check_value "$boot_uuid" "Boot LUKS UUID"
 check_value "$boot_fs_uuid" "Boot Filesystem UUID"
 check_value "$efi_fs_uuid" "EFI Filesystem UUID"
 
-# If any values are missing, abort before modifying flake.nix
 if [[ $MISSING_VALUES -gt 0 ]]; then
     echo -e "\033[1;31m[ERROR]\033[0m Some expected values were not found in hardware-configuration.nix!"
     echo "Please check hardware-configuration.nix and ensure all required values are present."
@@ -358,8 +403,6 @@ if [[ $MISSING_VALUES -gt 0 ]]; then
 fi
 
 echo -e "\033[1;34m[INFO]\033[0m Updating flake.nix with detected hardware details..."
-
-# Update flake.nix using explicit placeholders
 sed -i "s|PLACEHOLDER_NVME0|${nvme0_path}|g" /mnt/etc/nixos/flake.nix
 sed -i "s|PLACEHOLDER_NVME1|${nvme1_path}|g" /mnt/etc/nixos/flake.nix
 sed -i "s|PLACEHOLDER_BOOT_UUID|/dev/disk/by-uuid/${boot_uuid}|g" /mnt/etc/nixos/flake.nix
