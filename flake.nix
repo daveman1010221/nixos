@@ -130,6 +130,9 @@
                 "zswap.enabled=1"
                 "zswap.max_pool_percent=10"
                 "modprobe.blacklist=nouveau"
+		"rootfstype=f2fs"
+		"nvme_core.default_ps_max_latency_us=0"
+		"fips=1"
               ];
 
               kernelPatches = [
@@ -174,6 +177,7 @@
                   "vfat"
                   "xhci_hcd"
                   "xhci_pci"
+		  "f2fs"
                 ];
 
                 # Define LUKS devices, including the encrypted /boot and NVMe devices
@@ -529,6 +533,34 @@
                   fsType = "vfat";
                   options = [ "umask=0077" ]; # Ensure proper permissions for the EFI partition
                 };
+
+	      "/" =
+	        {
+		  device = "/dev/mapper/nix-root";
+		  fsType = "f2fs";
+		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
+		};
+
+	      "/var" =
+	        {
+		  device = "/dev/mapper/nix-var";
+		  fsType = "f2fs";
+		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
+		};
+
+	      "/tmp" =
+	        {
+		  device = "/dev/mapper/nix-tmp";
+		  fsType = "f2fs";
+		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
+		};
+
+	      "/home" =
+	        {
+		  device = "/dev/mapper/nix-home";
+		  fsType = "f2fs";
+		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
+		};
             };
 
             hardware = {
@@ -2009,6 +2041,8 @@
                   };
                 };
               };
+
+	      fstrim.enable = true;
           
               # firmware update daemon
               fwupd.enable = true;

@@ -67,7 +67,7 @@ NIXOS_REPO="https://github.com/daveman1010221/nixos.git"
 
 ### PRE-FLIGHT CHECKS
 echo -e "\033[1;34m[INFO]\033[0m Checking required commands..."
-for cmd in parted cryptsetup mdadm pvcreate vgcreate lvcreate mkfs.ext4 mkfs.vfat git; do
+for cmd in parted cryptsetup mdadm pvcreate vgcreate lvcreate mkfs.ext4 mkfs.f2fs mkfs.vfat git; do
     check_command "$cmd"
 done
 
@@ -129,7 +129,7 @@ mkfs.vfat -v -F 32 ${EFI_PARTITION}
 
 ### ENCRYPTING /BOOT ###
 echo -e "\033[1;34m[INFO]\033[0m Encrypting /boot (You will be prompted for a passphrase)..."
-cryptsetup luksFormat --type luks1 --hash sha256 --key-size 512 --cipher aes-xts-plain64 --pbkdf pbkdf2 ${BOOT_PARTITION}
+cryptsetup luksFormat --type luks1 --hash sha256 --key-size 256 --cipher aes-xts-essiv --pbkdf pbkdf2 --allow-discards --iter-time 500 ${BOOT_PARTITION}
 cryptsetup luksOpen ${BOOT_PARTITION} boot_crypt
 
 ### FORMATTING & MOUNTING /BOOT ###
@@ -157,7 +157,7 @@ for device in "${DEV_BLOCKS[@]}"; do
         confirm "Do you want to reformat and erase the encryption?"
     fi
     dd if=/dev/zero of=/dev/${device} bs=1M count=512 status=progress
-    cryptsetup luksFormat --type luks2 --cipher aes-xts-plain64 --key-size 256 --hash sha256 --key-file ${KEYS_DIR}/${device}.key --header ${KEYS_DIR}/${device}.header /dev/${device}
+    cryptsetup luksFormat --type luks2 --cipher aes-xts-essiv --key-size 256 --hash sha256 --allow-discards --key-file ${KEYS_DIR}/${device}.key --header ${KEYS_DIR}/${device}.header /dev/${device}
     cryptsetup luksOpen --key-file ${KEYS_DIR}/${device}.key --header ${KEYS_DIR}/${device}.header /dev/${device} ${device}_crypt
 done
 
@@ -184,10 +184,10 @@ vgcreate -s 16M nix /dev/md0 || { echo -e "\033[1;31m[ERROR]\033[0m Failed to cr
 
 # 3️⃣  Create Logical Volumes
 lvcreate -L 96G  -n swap nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create swap LV!"; exit 1; }
-lvcreate -L 20G  -n tmp  nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create tmp LV!"; exit 1; }
-lvcreate -L 120G -n var  nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create var LV!"; exit 1; }
+lvcreate -L 80G  -n tmp  nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create tmp LV!"; exit 1; }
+lvcreate -L 80G -n var  nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create var LV!"; exit 1; }
 lvcreate -L 200G -n root nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create root LV!"; exit 1; }
-lvcreate -L 200G -n home nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create home LV!"; exit 1; }
+lvcreate -L 500G -n home nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create home LV!"; exit 1; }
 
 # 4️⃣  Verify LVM setup
 echo -e "\033[1;34m[INFO]\033[0m Verifying LVM setup..."
@@ -196,10 +196,10 @@ lvdisplay nix
 
 # 5️⃣  Format Logical Volumes with EXT4
 echo -e "\033[1;34m[INFO]\033[0m Formatting Logical Volumes with EXT4..."
-mkfs.ext4 -O ^has_journal -E stride=128,stripe-width=256 /dev/nix/tmp  || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format tmp LV!"; exit 1; }
-mkfs.ext4 -O ^has_journal -E stride=128,stripe-width=256 /dev/nix/var  || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format var LV!"; exit 1; }
-mkfs.ext4 -O ^has_journal -E stride=128,stripe-width=256 /dev/nix/root || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format root LV!"; exit 1; }
-mkfs.ext4 -O ^has_journal -E stride=128,stripe-width=256 /dev/nix/home || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format home LV!"; exit 1; }
+mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum -z 512 /dev/nix/tmp  || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format tmp LV!"; exit 1; }
+mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum -z 512 /dev/nix/var  || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format var LV!"; exit 1; }
+mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum -z 512 /dev/nix/root || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format root LV!"; exit 1; }
+mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum -z 512 /dev/nix/home || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format home LV!"; exit 1; }
 
 # 6️⃣  Configure Swap
 echo -e "\033[1;34m[INFO]\033[0m Configuring Swap..."
