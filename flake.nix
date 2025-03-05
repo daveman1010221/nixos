@@ -89,6 +89,79 @@
                 #     });
                 #   };
                 # })
+
+                # (self: super: {
+                  # makeModulesClosure = { kernel, firmware, rootModules, allowMissing ? false }:
+                    # super.makeModulesClosure {
+                      # inherit kernel firmware rootModules;
+                      # allowMissing = true; # Force true
+                    # };
+                # })
+                (self: super: {
+                  hardened_linux_kernel = super.linuxPackagesFor (super.linuxKernel.kernels.linux_6_12_hardened.overrideAttrs (old: {
+                    dontConfigure = true;
+              
+                    buildPhase = ''
+                      cp ${./.config} .config
+                      make \
+                        ARCH=${super.stdenv.hostPlatform.linuxArch} \
+                        CROSS_COMPILE= \
+                        KBUILD_BUILD_VERSION=1-NixOS \
+                        KCFLAGS=-Wno-error \
+                        O=. \
+                        SHELL=${super.bash}/bin/bash \
+                        -j$NIX_BUILD_CORES \
+                        olddefconfig bzImage modules
+                    '';
+              
+                    installPhase = ''
+                      mkdir -p $out
+                      mkdir -p $dev
+
+                      make \
+                        INSTALL_PATH=$out \
+                        INSTALL_MOD_PATH=$out \
+                        INSTALL_HDR_PATH=$dev \
+                        O=. \
+                        -j$NIX_BUILD_CORES \
+                        headers_install modules_install
+
+                      cp arch/x86/boot/bzImage System.map $out/
+
+                      version=$(make O=. kernelrelease)
+
+                      # Prepare the source tree for external module builds
+                      mkdir -p $dev/lib/modules/$version/source
+
+                      # Preserve essential files before cleanup
+                      cp .config $dev/lib/modules/$version/source/.config
+                      if [ -f Module.symvers ]; then cp Module.symvers $dev/lib/modules/$version/source/Module.symvers; fi
+                      if [ -f System.map ]; then cp System.map $dev/lib/modules/$version/source/System.map; fi
+                      if [ -d include ]; then
+                        mkdir -p $dev/lib/modules/$version/source
+                        cp -r include $dev/lib/modules/$version/source/
+                      fi
+
+                      # Clean the build tree
+                      make O=. clean mrproper
+
+                      # Copy the cleaned-up source tree, before it gets whacked.
+                      cp -a . $dev/lib/modules/$version/source
+
+                      # **Change to the new source directory**
+                      cd $dev/lib/modules/$version/source
+
+                      # Regenerate configuration and prepare for external module compilation
+                      make O=$dev/lib/modules/$version/source \
+                        -j$NIX_BUILD_CORES \
+                        olddefconfig prepare modules_prepare
+
+                      ln -s $dev/lib/modules/$version/source $dev/lib/modules/$version/build
+                    '';
+
+                    outputs = [ "out" "dev" ];
+                  }));
+                })
               ];
 
               config = {
