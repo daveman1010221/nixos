@@ -403,15 +403,17 @@ if [[ $MISSING_VALUES -gt 0 ]]; then
 fi
 
 echo -e "\033[1;34m[INFO]\033[0m Updating flake.nix with detected hardware details..."
-sed -i "s|PLACEHOLDER_NVME0|${nvme0_path}|g" /mnt/etc/nixos/flake.nix
-sed -i "s|PLACEHOLDER_NVME1|${nvme1_path}|g" /mnt/etc/nixos/flake.nix
-sed -i "s|PLACEHOLDER_BOOT_UUID|/dev/disk/by-uuid/${boot_uuid}|g" /mnt/etc/nixos/flake.nix
-sed -i "s|PLACEHOLDER_BOOT_FS_UUID|/dev/disk/by-uuid/${boot_fs_uuid}|g" /mnt/etc/nixos/flake.nix
-sed -i "s|PLACEHOLDER_EFI_FS_UUID|/dev/disk/by-uuid/${efi_fs_uuid}|g" /mnt/etc/nixos/flake.nix
-sed -i "s|PLACEHOLDER_ROOT|/dev/disk/by-uuid/${root_fs_uuid}|g" /mnt/etc/nixos/flake.nix
-sed -i "s|PLACEHOLDER_VAR|/dev/disk/by-uuid/${var_fs_uuid}|g" /mnt/etc/nixos/flake.nix
-sed -i "s|PLACEHOLDER_TMP|/dev/disk/by-uuid/${tmp_fs_uuid}|g" /mnt/etc/nixos/flake.nix
-sed -i "s|PLACEHOLDER_HOME|/dev/disk/by-uuid/${home_fs_uuid}|g" /mnt/etc/nixos/flake.nix
+
+sed -i "s|PLACEHOLDER_NVME0 = \"\";|PLACEHOLDER_NVME0 = \"${nvme0_path}\";|" /mnt/etc/nixos/flake.nix
+sed -i "s|PLACEHOLDER_NVME1 = \"\";|PLACEHOLDER_NVME1 = \"${nvme1_path}\";|" /mnt/etc/nixos/flake.nix
+sed -i "s|PLACEHOLDER_BOOT_UUID = \"\";|PLACEHOLDER_BOOT_UUID = \"/dev/disk/by-uuid/${boot_uuid}\";|" /mnt/etc/nixos/flake.nix
+sed -i "s|PLACEHOLDER_BOOT_FS_UUID = \"\";|PLACEHOLDER_BOOT_FS_UUID = \"/dev/disk/by-uuid/${boot_fs_uuid}\";|" /mnt/etc/nixos/flake.nix
+sed -i "s|PLACEHOLDER_EFI_FS_UUID = \"\";|PLACEHOLDER_EFI_FS_UUID = \"/dev/disk/by-uuid/${efi_fs_uuid}\";|" /mnt/etc/nixos/flake.nix
+sed -i "s|PLACEHOLDER_ROOT = \"\";|PLACEHOLDER_ROOT = \"/dev/disk/by-uuid/${root_fs_uuid}\";|" /mnt/etc/nixos/flake.nix
+sed -i "s|PLACEHOLDER_VAR = \"\";|PLACEHOLDER_VAR = \"/dev/disk/by-uuid/${var_fs_uuid}\";|" /mnt/etc/nixos/flake.nix
+sed -i "s|PLACEHOLDER_TMP = \"\";|PLACEHOLDER_TMP = \"/dev/disk/by-uuid/${tmp_fs_uuid}\";|" /mnt/etc/nixos/flake.nix
+sed -i "s|PLACEHOLDER_HOME = \"\";|PLACEHOLDER_HOME = \"/dev/disk/by-uuid/${home_fs_uuid}\";|" /mnt/etc/nixos/flake.nix
+sed -i "s|PLACEHOLDER_HOSTNAME = \"\";|PLACEHOLDER_HOSTNAME = \"${HOSTNAME}\";|" /mnt/etc/nixos/flake.nix
 
 echo -e "\033[1;34m[INFO]\033[0m Flake configuration updated successfully!"
 
