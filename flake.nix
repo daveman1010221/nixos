@@ -24,10 +24,19 @@
   outputs = { self, nixpkgs, nixos-cosmic, rust-overlay, myNeovimOverlay}:
   let
     system = "x86_64-linux";
-
+    PLACEHOLDER_NVME0 = "";
+    PLACEHOLDER_NVME1 = "";
+    PLACEHOLDER_BOOT_UUID = "";
+    PLACEHOLDER_BOOT_FS_UUID = "";
+    PLACEHOLDER_EFI_FS_UUID = "";
+    PLACEHOLDER_ROOT = "";
+    PLACEHOLDER_VAR = "";
+    PLACEHOLDER_TMP = "";
+    PLACEHOLDER_HOME = "";
+    PLACEHOLDER_HOSTNAME = "";
   in {
     nixosConfigurations = {
-      precisionws = nixpkgs.lib.nixosSystem {
+      "${PLACEHOLDER_HOSTNAME}" = nixpkgs.lib.nixosSystem {
         inherit system;
 
         modules = [
@@ -186,7 +195,7 @@
                   devices = {
                     boot_crypt = {
                       # sdb2 UUID (pre-luksOpen)
-                      device = "PLACEHOLDER_BOOT_UUID";
+                      device = PLACEHOLDER_BOOT_UUID;
                       preLVM = true;
                       allowDiscards = true;
                       # Custom mount commands for the unencrypted /boot, included in the initrd
@@ -235,7 +244,7 @@
                     # Configuration for NVMe devices with detached headers and keys on encrypted /boot
                     # EDIT
                     nvme0n1_crypt = {
-                      device = "PLACEHOLDER_NVME0";
+                      device = PLACEHOLDER_NVME0;
                       header = "/sensitive/keys/nvme0n1.header";
                       keyFile = "/sensitive/keys/nvme0n1.key";
                       allowDiscards = true;
@@ -249,7 +258,7 @@
 
                     # EDIT
                     nvme1n1_crypt = {
-                      device = "PLACEHOLDER_NVME1";
+                      device = PLACEHOLDER_NVME1;
                       header = "/sensitive/keys/nvme1n1.header";
                       keyFile = "/sensitive/keys/nvme1n1.key";
                       allowDiscards = true;
@@ -413,7 +422,7 @@
                 mdadm # RAID management
                 mdcat
                 microsoft-edge
-                mlocate
+                plocate
                 neo-cowsay
                 neofetch
                 nerdctl
@@ -521,7 +530,7 @@
               # dm0 UUID (post-luksOpen)
               # EDIT
               "/boot" =
-                { device = "PLACEHOLDER_BOOT_FS_UUID";
+                { device = PLACEHOLDER_BOOT_FS_UUID;
                   fsType = "ext4";
                   neededForBoot = true;
                 };
@@ -529,35 +538,35 @@
               # UUID
               # EDIT
               "/boot/EFI" =
-                { device = "PLACEHOLDER_EFI_FS_UUID";
+                { device = PLACEHOLDER_EFI_FS_UUID;
                   fsType = "vfat";
                   options = [ "umask=0077" ]; # Ensure proper permissions for the EFI partition
                 };
 
 	      "/" =
 	        {
-		  device = "PLACEHOLDER_ROOT";
+		  device = PLACEHOLDER_ROOT;
 		  fsType = "f2fs";
 		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
 		};
 
 	      "/var" =
 	        {
-		  device = "PLACEHOLDER_VAR";
+		  device = PLACEHOLDER_VAR;
 		  fsType = "f2fs";
 		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
 		};
 
 	      "/tmp" =
 	        {
-		  device = "PLACEHOLDER_TMP";
+		  device = PLACEHOLDER_TMP;
 		  fsType = "f2fs";
 		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
 		};
 
 	      "/home" =
 	        {
-		  device = "PLACEHOLDER_HOME";
+		  device = PLACEHOLDER_HOME;
 		  fsType = "f2fs";
 		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
 		};
@@ -621,7 +630,7 @@
             };
 
             networking = {
-              hostName = "precisionws";
+              hostName = PLACEHOLDER_HOSTNAME;
 
               firewall.enable = false;
 
@@ -1018,11 +1027,11 @@
                           #cut -d ' ' -f 2 | \
                           #rg -o '((1?[0-9][0-9]?|2[0-4][0-9]|25[0-5])\.){3}(1?[0-9][0-9]?|2[0-4][0-9]|25[0-5])')
                   
-                      #set NEW_HOSTNAME precisionws.$m_ip.nip.io
+                      #set NEW_HOSTNAME ${PLACEHOLDER_HOSTNAME}.$m_ip.nip.io
                   
                       # nip.io creates resolvable hostnames by embedding their IP in the hostname
                       # and then resolving the hostname to that IP address.
-                      # doas hostnamectl set-hostname precisionws.$m_ip.nip.io
+                      # doas hostnamectl set-hostname ${PLACEHOLDER_HOSTNAME}.$m_ip.nip.io
                       #echo $NEW_HOSTNAME | \
                           #doas tee /etc/hostname /proc/sys/kernel/hostname >/dev/null
                   end
@@ -1337,7 +1346,7 @@
                   function mount_boot --description 'Mount the encrypted /boot and /boot/EFI partitions using Nix expressions'
                       pushd /etc/nixos
                       # Extract encrypted device path using Nix expressions
-                      set encrypted_device (nix eval --impure --raw '.#nixosConfigurations.precisionws.config.boot.initrd.luks.devices."boot_crypt".device')
+                      set encrypted_device (nix eval --impure --raw '.#nixosConfigurations.${PLACEHOLDER_HOSTNAME}.config.boot.initrd.luks.devices."boot_crypt".device')
                       if test -z "$encrypted_device"
                           echo "Could not retrieve encrypted device path from NixOS configuration."
                           return 1
@@ -1375,7 +1384,7 @@
                       end
                   
                       # Extract device path for /boot/EFI using Nix expressions
-                      set efi_device (nix eval --impure --raw '.#nixosConfigurations.precisionws.config.fileSystems."/boot/EFI".device')
+                      set efi_device (nix eval --impure --raw '.#nixosConfigurations.${PLACEHOLDER_HOSTNAME}.config.fileSystems."/boot/EFI".device')
                       if test -z "$efi_device"
                           echo "Could not retrieve /boot/EFI device path from NixOS configuration."
                           return 1
@@ -2077,8 +2086,7 @@
               xserver.videoDrivers = ["nvidia"];
           
               locate.enable = true;
-              locate.package = pkgs.mlocate;
-              locate.localuser = null;
+              locate.package = pkgs.plocate;
           
               lvm.enable = true;
           
