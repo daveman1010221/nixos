@@ -24,16 +24,16 @@
   outputs = { self, nixpkgs, nixos-cosmic, rust-overlay, myNeovimOverlay}:
   let
     system = "x86_64-linux";
-    PLACEHOLDER_NVME0 = "";
-    PLACEHOLDER_NVME1 = "";
-    PLACEHOLDER_BOOT_UUID = "";
-    PLACEHOLDER_BOOT_FS_UUID = "";
-    PLACEHOLDER_EFI_FS_UUID = "";
-    PLACEHOLDER_ROOT = "";
-    PLACEHOLDER_VAR = "";
-    PLACEHOLDER_TMP = "";
-    PLACEHOLDER_HOME = "";
-    PLACEHOLDER_HOSTNAME = "";
+    PLACEHOLDER_NVME0 = "/dev/disk/by-id/nvme-eui.ace42e00310a1b372ee4ac0000000001";
+    PLACEHOLDER_NVME1 = "/dev/disk/by-id/nvme-eui.ace42e00310a1b382ee4ac0000000001";
+    PLACEHOLDER_BOOT_UUID = "/dev/disk/by-uuid/1a8b9414-bac2-4c99-9611-0f4d8044d1f4";
+    PLACEHOLDER_BOOT_FS_UUID = "/dev/disk/by-uuid/80e6f8d2-fa1f-4941-8d7b-695b5d92521e";
+    PLACEHOLDER_EFI_FS_UUID = "/dev/disk/by-uuid/4B26-AC94";
+    PLACEHOLDER_ROOT = "/dev/disk/by-uuid/3eb50103-1a8d-484b-bcba-745f25883175";
+    PLACEHOLDER_VAR = "/dev/disk/by-uuid/46307b9e-7391-406f-bb5c-fde9af8aabc8";
+    PLACEHOLDER_TMP = "/dev/disk/by-uuid/b7a83494-aaed-4f87-bcde-2de401cd0a5d";
+    PLACEHOLDER_HOME = "/dev/disk/by-uuid/4c3090c8-e885-4f51-a556-381dfe385e67";
+    PLACEHOLDER_HOSTNAME = "precisionws";
   in {
     nixosConfigurations = {
       "${PLACEHOLDER_HOSTNAME}" = nixpkgs.lib.nixosSystem {
@@ -1419,7 +1419,7 @@
                   function mount_boot --description 'Mount the encrypted /boot and /boot/EFI partitions using Nix expressions'
                       pushd /etc/nixos
                       # Extract encrypted device path using Nix expressions
-                      set encrypted_device (nix eval --impure --raw '.#nixosConfigurations.${PLACEHOLDER_HOSTNAME}.config.boot.initrd.luks.devices."boot_crypt".device')
+                      set encrypted_device (nix eval --impure --raw '.#nixosConfigurations.precisionws${PLACEHOLDER_HOSTNAME}.config.boot.initrd.luks.devices."boot_crypt".device')
                       if test -z "$encrypted_device"
                           echo "Could not retrieve encrypted device path from NixOS configuration."
                           return 1
@@ -1457,7 +1457,7 @@
                       end
                   
                       # Extract device path for /boot/EFI using Nix expressions
-                      set efi_device (nix eval --impure --raw '.#nixosConfigurations.${PLACEHOLDER_HOSTNAME}.config.fileSystems."/boot/EFI".device')
+                      set efi_device (nix eval --impure --raw '.#nixosConfigurations.precisionws${PLACEHOLDER_HOSTNAME}.config.fileSystems."/boot/EFI".device')
                       if test -z "$efi_device"
                           echo "Could not retrieve /boot/EFI device path from NixOS configuration."
                           return 1

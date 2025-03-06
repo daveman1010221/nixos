@@ -14,40 +14,40 @@
   boot.extraModulePackages = [ ];
 
   fileSystems."/" =
-    { device = "/dev/disk/by-uuid/9a36e0b9-5bb6-4024-a94f-018b4ba7cde6";
-      fsType = "ext4";
+    { device = "/dev/disk/by-uuid/3eb50103-1a8d-484b-bcba-745f25883175";
+      fsType = "f2fs";
     };
 
   fileSystems."/tmp" =
-    { device = "/dev/disk/by-uuid/1bd9c841-9666-4047-925c-aae5818d33a9";
-      fsType = "ext4";
+    { device = "/dev/disk/by-uuid/b7a83494-aaed-4f87-bcde-2de401cd0a5d";
+      fsType = "f2fs";
     };
 
   fileSystems."/var" =
-    { device = "/dev/disk/by-uuid/1a86ff98-129f-47e6-a651-e2f828aa2023";
-      fsType = "ext4";
+    { device = "/dev/disk/by-uuid/46307b9e-7391-406f-bb5c-fde9af8aabc8";
+      fsType = "f2fs";
     };
 
   fileSystems."/home" =
-    { device = "/dev/disk/by-uuid/94a5df88-f426-44b9-8517-1c8c9f68d3e1";
-      fsType = "ext4";
+    { device = "/dev/disk/by-uuid/4c3090c8-e885-4f51-a556-381dfe385e67";
+      fsType = "f2fs";
     };
 
   fileSystems."/boot" =
-    { device = "/dev/disk/by-uuid/5b605f2d-f67f-4744-8f36-046e2d55bfb9";
+    { device = "/dev/disk/by-uuid/80e6f8d2-fa1f-4941-8d7b-695b5d92521e";
       fsType = "ext4";
     };
 
-  boot.initrd.luks.devices."boot_crypt".device = "/dev/disk/by-uuid/ed470d64-56da-4624-8080-bc736a64e27f";
+  boot.initrd.luks.devices."boot_crypt".device = "/dev/disk/by-uuid/1a8b9414-bac2-4c99-9611-0f4d8044d1f4";
 
   fileSystems."/boot/EFI" =
-    { device = "/dev/disk/by-uuid/7EF5-FFA3";
+    { device = "/dev/disk/by-uuid/4B26-AC94";
       fsType = "vfat";
       options = [ "fmask=0022" "dmask=0022" ];
     };
 
   swapDevices =
-    [ { device = "/dev/disk/by-uuid/980e9349-26c6-45b4-b299-42bfdc3b794e"; }
+    [ { device = "/dev/disk/by-uuid/bc4b58b3-5d86-484b-a54a-5ed1250dc26f"; }
     ];
 
   # Enables DHCP on each ethernet and wireless interface. In case of scripted networking
@@ -55,7 +55,6 @@
   # still possible to use this option, but it's recommended to use it in conjunction
   # with explicit per-interface declarations with `networking.interfaces.<interface>.useDHCP`.
   networking.useDHCP = lib.mkDefault true;
-  # networking.interfaces.enp0s31f6.useDHCP = lib.mkDefault true;
   # networking.interfaces.wlp0s20f3.useDHCP = lib.mkDefault true;
 
   nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
