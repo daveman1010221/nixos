@@ -1419,7 +1419,7 @@
                   function mount_boot --description 'Mount the encrypted /boot and /boot/EFI partitions using Nix expressions'
                       pushd /etc/nixos
                       # Extract encrypted device path using Nix expressions
-                      set encrypted_device (nix eval --impure --raw '.#nixosConfigurations.precisionws${PLACEHOLDER_HOSTNAME}.config.boot.initrd.luks.devices."boot_crypt".device')
+                      set encrypted_device (nix eval --impure --raw '.#nixosConfigurations.${PLACEHOLDER_HOSTNAME}.config.boot.initrd.luks.devices."boot_crypt".device')
                       if test -z "$encrypted_device"
                           echo "Could not retrieve encrypted device path from NixOS configuration."
                           return 1
@@ -1457,7 +1457,7 @@
                       end
                   
                       # Extract device path for /boot/EFI using Nix expressions
-                      set efi_device (nix eval --impure --raw '.#nixosConfigurations.precisionws${PLACEHOLDER_HOSTNAME}.config.fileSystems."/boot/EFI".device')
+                      set efi_device (nix eval --impure --raw '.#nixosConfigurations.${PLACEHOLDER_HOSTNAME}.config.fileSystems."/boot/EFI".device')
                       if test -z "$efi_device"
                           echo "Could not retrieve /boot/EFI device path from NixOS configuration."
                           return 1
