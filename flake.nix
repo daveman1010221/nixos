@@ -699,7 +699,7 @@
 
                 # Optionally, you may need to select the appropriate driver version for
                 # your specific GPU.
-                package = config.boot.kernelPackages.nvidiaPackages.beta;
+                package = config.boot.kernelPackages.nvidiaPackages.vulkan_beta;
               };
 
               nvidia-container-toolkit = {
@@ -1606,7 +1606,7 @@
                       # Run nixos-rebuild switch
                       echo "Running nixos-rebuild switch..."
                       pushd /etc/nixos
-                      sudo nixos-rebuild switch
+                      sudo nixos-rebuild switch --flake path:.
                       popd
                       set rebuild_status $status
                   
