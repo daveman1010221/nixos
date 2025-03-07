@@ -363,7 +363,7 @@
 
                 services.lvm.enable = true;
 
-                supportedFilesystems = ["ext4" "vfat" ];
+                supportedFilesystems = ["ext4" "vfat" "f2fs" ];
               };
 
               # The variables 'canTouchEfiVariables' and 'efiInstallAsRemovable' are
