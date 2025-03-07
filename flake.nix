@@ -24,19 +24,23 @@
   outputs = { self, nixpkgs, nixos-cosmic, rust-overlay, myNeovimOverlay}:
   let
     system = "x86_64-linux";
-    PLACEHOLDER_NVME0 = "";
-    PLACEHOLDER_NVME1 = "";
-    PLACEHOLDER_BOOT_UUID = "";
-    PLACEHOLDER_BOOT_FS_UUID = "";
-    PLACEHOLDER_EFI_FS_UUID = "";
-    PLACEHOLDER_ROOT = "";
-    PLACEHOLDER_VAR = "";
-    PLACEHOLDER_TMP = "";
-    PLACEHOLDER_HOME = "";
-    PLACEHOLDER_HOSTNAME = "";
+
+    # Load the secrets if the file exists, else use empty strings.
+    secrets = if builtins.pathExists ./secrets.nix then import ./secrets.nix else {
+      PLACEHOLDER_NVME0 = "";
+      PLACEHOLDER_NVME1 = "";
+      PLACEHOLDER_BOOT_UUID = "";
+      PLACEHOLDER_BOOT_FS_UUID = "";
+      PLACEHOLDER_EFI_FS_UUID = "";
+      PLACEHOLDER_ROOT = "";
+      PLACEHOLDER_VAR = "";
+      PLACEHOLDER_TMP = "";
+      PLACEHOLDER_HOME = "";
+      PLACEHOLDER_HOSTNAME = "";
+    };
   in {
     nixosConfigurations = {
-      "${PLACEHOLDER_HOSTNAME}" = nixpkgs.lib.nixosSystem {
+      "${secrets.PLACEHOLDER_HOSTNAME}" = nixpkgs.lib.nixosSystem {
         inherit system;
 
         modules = [
@@ -278,7 +282,7 @@
                   devices = {
                     boot_crypt = {
                       # sdb2 UUID (pre-luksOpen)
-                      device = PLACEHOLDER_BOOT_UUID;
+                      device = secrets.PLACEHOLDER_BOOT_UUID;
                       preLVM = true;
                       allowDiscards = true;
                       # Custom mount commands for the unencrypted /boot, included in the initrd
@@ -327,7 +331,7 @@
                     # Configuration for NVMe devices with detached headers and keys on encrypted /boot
                     # EDIT
                     nvme0n1_crypt = {
-                      device = PLACEHOLDER_NVME0;
+                      device = secrets.PLACEHOLDER_NVME0;
                       header = "/sensitive/keys/nvme0n1.header";
                       keyFile = "/sensitive/keys/nvme0n1.key";
                       allowDiscards = true;
@@ -341,7 +345,7 @@
 
                     # EDIT
                     nvme1n1_crypt = {
-                      device = PLACEHOLDER_NVME1;
+                      device = secrets.PLACEHOLDER_NVME1;
                       header = "/sensitive/keys/nvme1n1.header";
                       keyFile = "/sensitive/keys/nvme1n1.key";
                       allowDiscards = true;
@@ -613,7 +617,7 @@
               # dm0 UUID (post-luksOpen)
               # EDIT
               "/boot" =
-                { device = PLACEHOLDER_BOOT_FS_UUID;
+                { device = secrets.PLACEHOLDER_BOOT_FS_UUID;
                   fsType = "ext4";
                   neededForBoot = true;
                 };
@@ -621,35 +625,35 @@
               # UUID
               # EDIT
               "/boot/EFI" =
-                { device = PLACEHOLDER_EFI_FS_UUID;
+                { device = secrets.PLACEHOLDER_EFI_FS_UUID;
                   fsType = "vfat";
                   options = [ "umask=0077" ]; # Ensure proper permissions for the EFI partition
                 };
 
 	      "/" =
 	        {
-		  device = PLACEHOLDER_ROOT;
+		  device = secrets.PLACEHOLDER_ROOT;
 		  fsType = "f2fs";
 		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
 		};
 
 	      "/var" =
 	        {
-		  device = PLACEHOLDER_VAR;
+		  device = secrets.PLACEHOLDER_VAR;
 		  fsType = "f2fs";
 		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
 		};
 
 	      "/tmp" =
 	        {
-		  device = PLACEHOLDER_TMP;
+		  device = secrets.PLACEHOLDER_TMP;
 		  fsType = "f2fs";
 		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
 		};
 
 	      "/home" =
 	        {
-		  device = PLACEHOLDER_HOME;
+		  device = secrets.PLACEHOLDER_HOME;
 		  fsType = "f2fs";
 		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
 		};
@@ -675,7 +679,7 @@
                   allowExternalGpu = false;
                   offload.enable = false; # Mutually exclusive with prime sync.
                   offload.enableOffloadCmd = false;
-                  sync.enable = true;
+                  sync.enable = false;
                   nvidiaBusId = "PCI:1:0:0";
                   intelBusId = "PCI:0:2:0";
                   reverseSync.enable = false;
@@ -692,7 +696,7 @@
                 # fail. Enable this if you have graphical corruption issues or
                 # application crashes after waking up from sleep. This fixes it by saving
                 # the entire VRAM memory to /tmp/ instead of just the bare essentials.
-                powerManagement.enable = false;
+                powerManagement.enable = true;
 
                 # Fine-grained power management. Turns off GPU when not in use.
                 # Experimental and only works on modern Nvidia GPUs (Turing or newer).
@@ -713,7 +717,7 @@
             };
 
             networking = {
-              hostName = PLACEHOLDER_HOSTNAME;
+              hostName = secrets.PLACEHOLDER_HOSTNAME;
 
               firewall.enable = false;
 
@@ -1110,11 +1114,11 @@
                           #cut -d ' ' -f 2 | \
                           #rg -o '((1?[0-9][0-9]?|2[0-4][0-9]|25[0-5])\.){3}(1?[0-9][0-9]?|2[0-4][0-9]|25[0-5])')
                   
-                      #set NEW_HOSTNAME ${PLACEHOLDER_HOSTNAME}.$m_ip.nip.io
+                      #set NEW_HOSTNAME ${secrets.PLACEHOLDER_HOSTNAME}.$m_ip.nip.io
                   
                       # nip.io creates resolvable hostnames by embedding their IP in the hostname
                       # and then resolving the hostname to that IP address.
-                      # doas hostnamectl set-hostname ${PLACEHOLDER_HOSTNAME}.$m_ip.nip.io
+                      # doas hostnamectl set-hostname ${secrets.PLACEHOLDER_HOSTNAME}.$m_ip.nip.io
                       #echo $NEW_HOSTNAME | \
                           #doas tee /etc/hostname /proc/sys/kernel/hostname >/dev/null
                   end
@@ -1429,7 +1433,7 @@
                   function mount_boot --description 'Mount the encrypted /boot and /boot/EFI partitions using Nix expressions'
                       pushd /etc/nixos
                       # Extract encrypted device path using Nix expressions
-                      set encrypted_device (nix eval --impure --raw '.#nixosConfigurations.${PLACEHOLDER_HOSTNAME}.config.boot.initrd.luks.devices."boot_crypt".device')
+                      set encrypted_device (nix eval --impure --raw '.#nixosConfigurations.${secrets.PLACEHOLDER_HOSTNAME}.config.boot.initrd.luks.devices."boot_crypt".device')
                       if test -z "$encrypted_device"
                           echo "Could not retrieve encrypted device path from NixOS configuration."
                           return 1
@@ -1467,7 +1471,7 @@
                       end
                   
                       # Extract device path for /boot/EFI using Nix expressions
-                      set efi_device (nix eval --impure --raw '.#nixosConfigurations.${PLACEHOLDER_HOSTNAME}.config.fileSystems."/boot/EFI".device')
+                      set efi_device (nix eval --impure --raw '.#nixosConfigurations.${secrets.PLACEHOLDER_HOSTNAME}.config.fileSystems."/boot/EFI".device')
                       if test -z "$efi_device"
                           echo "Could not retrieve /boot/EFI device path from NixOS configuration."
                           return 1
