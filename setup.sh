@@ -362,9 +362,6 @@ echo -e "\033[1;34m[INFO]\033[0m Cloning NixOS flake configuration..."
 rm -rf /mnt/etc/nixos  # Remove any existing repo (to avoid conflicts)
 git clone ${NIXOS_REPO} /mnt/etc/nixos
 
-echo -e "\033[1;34m[INFO]\033[0m Updating flake.nix with hostname: $HOSTNAME..."
-sed -i "s|nixosConfigurations\.[a-zA-Z0-9._-]*|nixosConfigurations.${HOSTNAME}|" /mnt/etc/nixos/flake.nix
-
 echo -e "\033[1;34m[INFO]\033[0m Restoring hardware configuration..."
 mv /mnt/etc/hardware-configuration.nix.bak /mnt/etc/nixos/hardware-configuration.nix
 
@@ -406,16 +403,24 @@ fi
 
 echo -e "\033[1;34m[INFO]\033[0m Updating flake.nix with detected hardware details..."
 
-sed -i "s|PLACEHOLDER_NVME0 = \"\";|PLACEHOLDER_NVME0 = \"${nvme0_path}\";|" /mnt/etc/nixos/flake.nix
-sed -i "s|PLACEHOLDER_NVME1 = \"\";|PLACEHOLDER_NVME1 = \"${nvme1_path}\";|" /mnt/etc/nixos/flake.nix
-sed -i "s|PLACEHOLDER_BOOT_UUID = \"\";|PLACEHOLDER_BOOT_UUID = \"/dev/disk/by-uuid/${boot_uuid}\";|" /mnt/etc/nixos/flake.nix
-sed -i "s|PLACEHOLDER_BOOT_FS_UUID = \"\";|PLACEHOLDER_BOOT_FS_UUID = \"/dev/disk/by-uuid/${boot_fs_uuid}\";|" /mnt/etc/nixos/flake.nix
-sed -i "s|PLACEHOLDER_EFI_FS_UUID = \"\";|PLACEHOLDER_EFI_FS_UUID = \"/dev/disk/by-uuid/${efi_fs_uuid}\";|" /mnt/etc/nixos/flake.nix
-sed -i "s|PLACEHOLDER_ROOT = \"\";|PLACEHOLDER_ROOT = \"/dev/disk/by-uuid/${root_fs_uuid}\";|" /mnt/etc/nixos/flake.nix
-sed -i "s|PLACEHOLDER_VAR = \"\";|PLACEHOLDER_VAR = \"/dev/disk/by-uuid/${var_fs_uuid}\";|" /mnt/etc/nixos/flake.nix
-sed -i "s|PLACEHOLDER_TMP = \"\";|PLACEHOLDER_TMP = \"/dev/disk/by-uuid/${tmp_fs_uuid}\";|" /mnt/etc/nixos/flake.nix
-sed -i "s|PLACEHOLDER_HOME = \"\";|PLACEHOLDER_HOME = \"/dev/disk/by-uuid/${home_fs_uuid}\";|" /mnt/etc/nixos/flake.nix
-sed -i "s|PLACEHOLDER_HOSTNAME = \"\";|PLACEHOLDER_HOSTNAME = \"${HOSTNAME}\";|" /mnt/etc/nixos/flake.nix
+# Ensure the secrets.nix file is created and write the variables to it
+cat <<EOF > /mnt/etc/nixos/secrets.nix
+{
+  PLACEHOLDER_NVME0 = "${nvme0_path}";
+  PLACEHOLDER_NVME1 = "${nvme1_path}";
+  PLACEHOLDER_BOOT_UUID = "/dev/disk/by-uuid/${boot_uuid}";
+  PLACEHOLDER_BOOT_FS_UUID = "/dev/disk/by-uuid/${boot_fs_uuid}";
+  PLACEHOLDER_EFI_FS_UUID = "/dev/disk/by-uuid/${efi_fs_uuid}";
+  PLACEHOLDER_ROOT = "/dev/disk/by-uuid/${root_fs_uuid}";
+  PLACEHOLDER_VAR = "/dev/disk/by-uuid/${var_fs_uuid}";
+  PLACEHOLDER_TMP = "/dev/disk/by-uuid/${tmp_fs_uuid}";
+  PLACEHOLDER_HOME = "/dev/disk/by-uuid/${home_fs_uuid}";
+  PLACEHOLDER_HOSTNAME = "${HOSTNAME}";
+}
+EOF
+
+# Ensure the secrets.nix file is saved
+chmod 600 /mnt/etc/nixos/secrets.nix
 
 echo -e "\033[1;34m[INFO]\033[0m Flake configuration updated successfully!"
 

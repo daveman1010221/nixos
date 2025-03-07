@@ -2,3 +2,6 @@ hello_world
 .plugins.fish
 NIX_LDFLAGS_FOR_TARGET.txt
 shell.nix.save
+secrets.nix
+hardware-configuration.nix
+.nvimlog
