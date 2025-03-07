@@ -239,27 +239,37 @@
               initrd = {
                 # Ensure the initrd includes necessary modules for encryption, RAID, and filesystems
                 availableKernelModules = [
-                  "aesni_intel"
-                  "ahci"
-                  "cryptd"
-                  "crypto"
-                  "crypto_simd"
-                  "dm_crypt"
-                  "dm_mod"
-                  "ext4"
-                  "nls_cp437"
-                  "nls_iso8859_1"
-                  "nvme"
-                  "raid0"
-                  "sdhci_pci"
-                  "sd_mod"
-                  "uas"
-                  "usbcore"
-                  "usb_storage"
-                  "vfat"
-                  "xhci_hcd"
-                  "xhci_pci"
-		  "f2fs"
+		  # crypto
+		  "aes"             # The gold standard for FIPS 140-2/3 compliance
+                  "aesni_intel"     # Hardware-accelerate AES within the Intel CPU
+                  "cryptd"          # Async crypto support for multi-threaded encryption handling
+                  "crypto"          # Core crypto API support for all kernel crypto
+                  "crypto_simd"     # SIMD CPU instruction support for crypto, beneficial to AES-XTS mode
+                  "dm_crypt"        # LUKS encryption support for device mapper storage infrastructure
+		  "essiv"           # Encrypted Salt-Sector Initialization Vector is a transform for various encryption modes, mostly supporting block device encryption
+		  "xts"             # XEX-based tweaked-codebook mode with ciphertext stealing -- like essiv, is designed specifically for block device encryption
+
+		  # filesystems
+                  "ext4"            # Old time linux filesystem, used on the encrypted USB boot volume. Required because grub doesn't support F2FS yet.
+		  "f2fs"            # Flash-friendly filesystem support -- the top-layer of our storage stack
+                  "vfat"            # Windows FAT volumes, such as the FAT12 EFI partition
+
+		  # storage
+                  "nvme"            # NVME drive support
+                  "raid0"           # Software RAID0 via mdadm
+                  "usb_storage"     # Generic USB storage support
+                  "dm_mod"          # Device mapper infrastructure
+
+		  # hardware support modules
+                  "ahci"            # SATA disk support
+                  "nls_cp437"       # Character encoding for filesystems (Windows)
+                  "nls_iso8859_1"   # Character encoding for filesystems (FAT with UTF-8)
+                  "sdhci_pci"       # SD Card support (yubikey?)
+                  "sd_mod"          # SCSI disk support (/dev/sdX)
+                  "uas"             # USB attached SCSI (booting from USB)
+                  "usbcore"         # USB support
+                  "xhci_hcd"        # USB 3.x support
+                  "xhci_pci"        # USB 3.x support
                 ];
 
                 # Define LUKS devices, including the encrypted /boot and NVMe devices
