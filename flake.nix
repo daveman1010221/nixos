@@ -102,7 +102,7 @@
                     # };
                 # })
                 (self: super: {
-                  hardened_linux_kernel = super.linuxPackagesFor (super.linuxKernel.kernels.linux_6_12_hardened.overrideAttrs (old: {
+                  hardened_linux_kernel = super.linuxPackagesFor (super.linuxKernel.kernels.linux_6_13_hardened.overrideAttrs (old: {
                     dontConfigure = true;
               
                     buildPhase = ''
@@ -200,7 +200,7 @@
               # This bug-checks when GDM tries to initialize the external Nvidia display,
               # so clearly some sort of issue with the Nvidia driver and the hardened
               # kernel. It works fine for 'on the go' config, though. Considering making two kernel configs.
-              kernelPackages = pkgs.linuxPackages_6_12_hardened;
+              kernelPackages = pkgs.linuxPackages_6_13_hardened;
 
               #kernelModules = [ ];
               kernelParams = [
@@ -216,9 +216,9 @@
                 "zswap.enabled=1"
                 "zswap.max_pool_percent=10"
                 "modprobe.blacklist=nouveau"
-		"rootfstype=f2fs"
-		"nvme_core.default_ps_max_latency_us=0"
-		"fips=1"
+		        "rootfstype=f2fs"
+		        "nvme_core.default_ps_max_latency_us=0"
+		        "fips=1"
               ];
 
               kernelPatches = [
@@ -243,28 +243,28 @@
               initrd = {
                 # Ensure the initrd includes necessary modules for encryption, RAID, and filesystems
                 availableKernelModules = [
-		  # crypto
-		  "aes"             # The gold standard for FIPS 140-2/3 compliance
+		          # crypto
+		          "aes"             # The gold standard for FIPS 140-2/3 compliance
                   "aesni_intel"     # Hardware-accelerate AES within the Intel CPU
                   "cryptd"          # Async crypto support for multi-threaded encryption handling
                   "crypto"          # Core crypto API support for all kernel crypto
                   "crypto_simd"     # SIMD CPU instruction support for crypto, beneficial to AES-XTS mode
                   "dm_crypt"        # LUKS encryption support for device mapper storage infrastructure
-		  "essiv"           # Encrypted Salt-Sector Initialization Vector is a transform for various encryption modes, mostly supporting block device encryption
-		  "xts"             # XEX-based tweaked-codebook mode with ciphertext stealing -- like essiv, is designed specifically for block device encryption
+		          "essiv"           # Encrypted Salt-Sector Initialization Vector is a transform for various encryption modes, mostly supporting block device encryption
+		          "xts"             # XEX-based tweaked-codebook mode with ciphertext stealing -- like essiv, is designed specifically for block device encryption
 
-		  # filesystems
+		          # filesystems
                   "ext4"            # Old time linux filesystem, used on the encrypted USB boot volume. Required because grub doesn't support F2FS yet.
-		  "f2fs"            # Flash-friendly filesystem support -- the top-layer of our storage stack
+		          "f2fs"            # Flash-friendly filesystem support -- the top-layer of our storage stack
                   "vfat"            # Windows FAT volumes, such as the FAT12 EFI partition
 
-		  # storage
+		          # storage
                   "nvme"            # NVME drive support
                   "raid0"           # Software RAID0 via mdadm
                   "usb_storage"     # Generic USB storage support
                   "dm_mod"          # Device mapper infrastructure
 
-		  # hardware support modules
+		          # hardware support modules
                   "ahci"            # SATA disk support
                   "nls_cp437"       # Character encoding for filesystems (Windows)
                   "nls_iso8859_1"   # Character encoding for filesystems (FAT with UTF-8)
@@ -699,7 +699,7 @@
 
                 # Optionally, you may need to select the appropriate driver version for
                 # your specific GPU.
-                package = config.boot.kernelPackages.nvidiaPackages.vulkan_beta;
+                package = config.boot.kernelPackages.nvidiaPackages.beta;
               };
 
               nvidia-container-toolkit = {
