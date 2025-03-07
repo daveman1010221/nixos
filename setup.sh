@@ -31,6 +31,8 @@ function check_value() {
     fi
 }
 
+modprobe essiv
+
 ### IDENTIFY TARGET DRIVE ###
 echo -e "\033[1;34m[INFO]\033[0m Detecting available disks..."
 lsblk -o NAME,MODEL,SIZE,TYPE,MOUNTPOINT
@@ -191,7 +193,7 @@ echo -e "\033[1;34m[INFO]\033[0m Generating LUKS headers and keys..."
 mkdir -p ${KEYS_DIR}
 for device in "${DEV_BLOCKS[@]}"; do
     fallocate -l 4MiB ${KEYS_DIR}/${device}.header
-    openssl rand -out ${KEYS_DIR}/${device}.key 32
+    openssl rand -out ${KEYS_DIR}/${device}.key 64
 done
 chmod -R 400 ${KEYS_DIR}
 
@@ -203,7 +205,7 @@ for device in "${DEV_BLOCKS[@]}"; do
         confirm "Do you want to reformat and erase the encryption?"
     fi
     dd if=/dev/zero of=/dev/${device} bs=1M count=512 status=progress
-    cryptsetup luksFormat --type luks2 --cipher aes-xts-plain64 --key-size 256 --hash sha256 \
+    cryptsetup luksFormat --type luks2 --cipher aes-xts-essiv:sha256 --key-size 512 --hash sha256 \
       --key-file ${KEYS_DIR}/${device}.key --header ${KEYS_DIR}/${device}.header /dev/${device}
     cryptsetup luksOpen --allow-discards --key-file ${KEYS_DIR}/${device}.key \
       --header ${KEYS_DIR}/${device}.header /dev/${device} ${device}_crypt
