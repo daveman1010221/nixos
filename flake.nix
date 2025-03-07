@@ -115,7 +115,7 @@
                         O=. \
                         SHELL=${super.bash}/bin/bash \
                         -j$NIX_BUILD_CORES \
-                        olddefconfig bzImage modules
+                        bzImage modules
                     '';
               
                     installPhase = ''
@@ -158,7 +158,7 @@
                       # Regenerate configuration and prepare for external module compilation
                       make O=$dev/lib/modules/$version/source \
                         -j$NIX_BUILD_CORES \
-                        olddefconfig prepare modules_prepare
+                        prepare modules_prepare
 
                       ln -s $dev/lib/modules/$version/source $dev/lib/modules/$version/build
                     '';
