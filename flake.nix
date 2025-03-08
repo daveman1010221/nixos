@@ -49,7 +49,7 @@
               overlays = [
                 rust-overlay.overlays.default
                 myNeovimOverlay.overlays.default
-          
+
                 # The audit package needs and overlay to get the permissions right for
                 # the service to load the plug-ins.
                 # (self: super: {
@@ -78,12 +78,15 @@
 
                 # This override was created to fix a problem with bottles, which now works without this.
                 # (self: super: {
+
+                # This override was created to fix a problem with bottles, which now works without this.
+                # (self: super: {
                 #   python3Packages = super.python3Packages.override {
                 #     overrides = (pySelf: pyPrev: {
                 #       patool = pyPrev.patool.overrideAttrs (oldAttrs: {
                 #         # Keep doCheck = oldAttrs.doCheck or true
                 #         doCheck = true;  # Let the rest of the tests run normally
-                # 
+                #
                 #         postPatch = (oldAttrs.postPatch or "") + ''
                 #           echo "Patching out the failing test_nested_gzip..."
                 #           # Rename 'test_nested_gzip' so it never runs
@@ -100,7 +103,8 @@
                       # inherit kernel firmware rootModules;
                       # allowMissing = true; # Force true
                     # };
-                # })
+                # }) 
+          
                 (self: super: {
                   hardened_linux_kernel = super.linuxPackagesFor (super.linuxKernel.kernels.linux_6_13_hardened.overrideAttrs (old: {
                     dontConfigure = true;
@@ -161,9 +165,7 @@
                         prepare modules_prepare
 
                       ln -s $dev/lib/modules/$version/source $dev/lib/modules/$version/build
-
                     '';
-
                     outputs = [ "out" "dev" ];
                   }));
                 })
@@ -201,7 +203,7 @@
               # This bug-checks when GDM tries to initialize the external Nvidia display,
               # so clearly some sort of issue with the Nvidia driver and the hardened
               # kernel. It works fine for 'on the go' config, though. Considering making two kernel configs.
-              kernelPackages = pkgs.linuxPackages_6_13_hardened;
+              kernelPackages = pkgs.hardened_linux_kernel;
 
               #kernelModules = [ ];
               kernelParams = [
@@ -242,14 +244,14 @@
               # extraModulePackages = with config.boot.kernelPackages; [ ];
 
               initrd = {
+                includeDefaultModules = false;  # <-- This is an annoying fucker, along with 'luks.cryptoModules' below...
+
                 # Ensure the initrd includes necessary modules for encryption, RAID, and filesystems
-                availableKernelModules = [
+                availableKernelModules = lib.mkForce [
 		          # crypto
-		          "aes"             # The gold standard for FIPS 140-2/3 compliance
-                  "aesni_intel"     # Hardware-accelerate AES within the Intel CPU
-                  "cryptd"          # Async crypto support for multi-threaded encryption handling
-                  "crypto"          # Core crypto API support for all kernel crypto
-                  "crypto_simd"     # SIMD CPU instruction support for crypto, beneficial to AES-XTS mode
+                  "aesni_intel"     # The gold standard for FIPS 140-2/3 compliance
+                                    # Hardware-accelerate AES within the Intel CPU
+
                   "dm_crypt"        # LUKS encryption support for device mapper storage infrastructure
 		          "essiv"           # Encrypted Salt-Sector Initialization Vector is a transform for various encryption modes, mostly supporting block device encryption
 		          "xts"             # XEX-based tweaked-codebook mode with ciphertext stealing -- like essiv, is designed specifically for block device encryption
@@ -264,12 +266,12 @@
                   "raid0"           # Software RAID0 via mdadm
                   "usb_storage"     # Generic USB storage support
                   "dm_mod"          # Device mapper infrastructure
+                  "md_mod"
 
 		          # hardware support modules
                   "ahci"            # SATA disk support
                   "nls_cp437"       # Character encoding for filesystems (Windows)
                   "nls_iso8859_1"   # Character encoding for filesystems (FAT with UTF-8)
-                  "sdhci_pci"       # SD Card support (yubikey?)
                   "sd_mod"          # SCSI disk support (/dev/sdX)
                   "uas"             # USB attached SCSI (booting from USB)
                   "usbcore"         # USB support
@@ -280,6 +282,13 @@
                 # Define LUKS devices, including the encrypted /boot and NVMe devices
                 # EDIT
                 luks = {
+                  cryptoModules = [
+                    "aesni_intel"
+		            "essiv"
+		            "xts"
+                    "sha256"
+                  ];
+
                   devices = {
                     boot_crypt = {
                       # sdb2 UUID (pre-luksOpen)
