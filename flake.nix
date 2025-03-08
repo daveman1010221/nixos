@@ -24,6 +24,8 @@
   outputs = { self, nixpkgs, nixos-cosmic, rust-overlay, myNeovimOverlay}:
   let
     system = "x86_64-linux";
+    myPrivKey = ./MOK.priv;  # For kernel driver signing and loading.
+    myPubCert = ./MOK.pem;
 
     # Load the secrets if the file exists, else use empty strings.
     secrets = if builtins.pathExists ./secrets.nix then import ./secrets.nix else {
@@ -111,6 +113,7 @@
               
                     buildPhase = ''
                       cp ${./.config} .config
+                      cp ${./MOK.pem} MOK.pem
                       make \
                         ARCH=${super.stdenv.hostPlatform.linuxArch} \
                         CROSS_COMPILE= \
@@ -167,7 +170,38 @@
                       ln -s $dev/lib/modules/$version/source $dev/lib/modules/$version/build
                     '';
                     outputs = [ "out" "dev" ];
+
                   }));
+                  # Define kernelPackages based on hardened_linux_kernel
+                  kernelPackages = super.linuxPackagesFor self.hardened_linux_kernel;
+                })
+
+                # Step 2: Override NVIDIA driver package to use the custom kernel
+                (self: prev: {
+                  kernelPackages = prev.kernelPackages // {
+                    nvidiaPackages = prev.kernelPackages.nvidiaPackages // {
+                      beta = prev.kernelPackages.nvidiaPackages.beta.override {
+                        kernel = prev.kernelPackages.kernel;
+                      };
+                    };
+                  };
+                })
+
+                # Step 3: Sign the NVIDIA modules for Secure Boot
+                (self: prev: {
+                  kernelPackages = prev.kernelPackages // {
+                    nvidiaPackages = prev.kernelPackages.nvidiaPackages // {
+                      beta = prev.kernelPackages.nvidiaPackages.beta.overrideAttrs (old: {
+                        postInstall = (old.postInstall or "") + ''
+                          echo "Signing NVIDIA kernel modules for Secure Boot"
+                          for ko in $(find $out/lib/modules -name "*.ko"); do
+                            echo "Signing $ko"
+                            ${prev.kernelPackages.kernel.dev}/scripts/sign-file sha256 ${./MOK.priv} ${./MOK.pem} "$ko" || exit 1
+                          done
+                        '';
+                      });
+                    };
+                  };
                 })
               ];
 
@@ -210,7 +244,7 @@
                 "i8042.unlock"
                 "intel_idle.max_cstate=4"
                 "intel_iommu=on"
-                "lockdown=confidentiality"
+                #"lockdown=confidentiality"
                 "mitigations=auto"
                 "pci=realloc"
                 "seccomp=1"
@@ -248,6 +282,13 @@
 
                 # Ensure the initrd includes necessary modules for encryption, RAID, and filesystems
                 availableKernelModules = lib.mkForce [
+                  "nls_cp437"
+                  "nls_iso8859_1"
+                  "crypto_null"
+                  "cryptd"
+                  "sha256"
+                  "vmd"
+
 		          # crypto
                   "aesni_intel"     # The gold standard for FIPS 140-2/3 compliance
                                     # Hardware-accelerate AES within the Intel CPU
@@ -274,6 +315,7 @@
 		          # storage
                   "nvme"            # NVME drive support
                   "nvme_core"
+                  "nvme_auth"
                   "raid0"           # Software RAID0 via mdadm
                   "usb_storage"     # Generic USB storage support
                   "scsi_mod"
