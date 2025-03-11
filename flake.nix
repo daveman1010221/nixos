@@ -24,8 +24,14 @@
   outputs = { self, nixpkgs, nixos-cosmic, rust-overlay, myNeovimOverlay}:
   let
     system = "x86_64-linux";
-    myPrivKey = ./MOK.priv;  # For kernel driver signing and loading.
-    myPubCert = ./MOK.pem;
+
+    # For kernel driver signing and loading.
+    myPrivKey = builtins.toFile "MOK.priv" (builtins.readFile (builtins.toString ./MOK.priv));
+
+    myPubCert = builtins.toFile "MOK.pem" (builtins.readFile (builtins.toString ./MOK.pem));
+
+    myConfig = builtins.toFile ".config" (builtins.readFile (builtins.toString ./.config));
+
 
     # Load the secrets if the file exists, else use empty strings.
     secrets = if builtins.pathExists ./secrets.nix then import ./secrets.nix else {
@@ -110,10 +116,26 @@
                 (self: super: {
                   hardened_linux_kernel = super.linuxPackagesFor (super.linuxKernel.kernels.linux_6_13_hardened.overrideAttrs (old: {
                     dontConfigure = true;
-              
+                
+                    nativeBuildInputs = (old.nativeBuildInputs or []) ++ [ super.kmod super.openssl super.hostname super.fish ];
+                    buildInputs = (old.buildInputs or []) ++ [ super.kmod super.openssl super.hostname super.fish ];
+                
                     buildPhase = ''
-                      cp ${./.config} .config
-                      cp ${./MOK.pem} MOK.pem
+                      mkdir -p tmp_certs
+                      cp ${myConfig} tmp_certs/.config
+                      cp ${myPubCert} tmp_certs/MOK.pem
+                      cp ${myPrivKey} tmp_certs/MOK.priv
+                
+                      # Ensure they are actually there before proceeding
+                      ls -lah tmp_certs
+                
+                      # Move them into place before compilation
+                      cp tmp_certs/.config .config
+                      cp tmp_certs/MOK.pem MOK.pem
+                      cp tmp_certs/MOK.priv MOK.priv
+                
+                      ls -alh
+                
                       make \
                         ARCH=${super.stdenv.hostPlatform.linuxArch} \
                         CROSS_COMPILE= \
@@ -124,11 +146,15 @@
                         -j$NIX_BUILD_CORES \
                         bzImage modules
                     '';
-              
+                
                     installPhase = ''
+                      export PATH=${super.openssl}/bin:$PATH
+                      echo "Using OpenSSL from: $(which openssl)"
+                      openssl version
+                
                       mkdir -p $out
                       mkdir -p $dev
-
+                
                       make \
                         INSTALL_PATH=$out \
                         INSTALL_MOD_PATH=$out \
@@ -136,14 +162,14 @@
                         O=. \
                         -j$NIX_BUILD_CORES \
                         headers_install modules_install
-
+                
                       cp arch/x86/boot/bzImage System.map $out/
-
+                
                       version=$(make O=. kernelrelease)
-
+                
                       # Prepare the source tree for external module builds
                       mkdir -p $dev/lib/modules/$version/source
-
+                
                       # Preserve essential files before cleanup
                       cp .config $dev/lib/modules/$version/source/.config
                       if [ -f Module.symvers ]; then cp Module.symvers $dev/lib/modules/$version/source/Module.symvers; fi
@@ -152,56 +178,40 @@
                         mkdir -p $dev/lib/modules/$version/source
                         cp -r include $dev/lib/modules/$version/source/
                       fi
-
+                
                       # Clean the build tree
                       make O=. clean mrproper
-
-                      # Copy the cleaned-up source tree, before it gets whacked.
+                
+                      # Copy the cleaned-up source tree before it gets removed.
                       cp -a . $dev/lib/modules/$version/source
-
+                
                       # **Change to the new source directory**
                       cd $dev/lib/modules/$version/source
-
+                
                       # Regenerate configuration and prepare for external module compilation
                       make O=$dev/lib/modules/$version/source \
                         -j$NIX_BUILD_CORES \
                         prepare modules_prepare
-
+                
                       ln -s $dev/lib/modules/$version/source $dev/lib/modules/$version/build
                     '';
+                
                     outputs = [ "out" "dev" ];
-
                   }));
-                  # Define kernelPackages based on hardened_linux_kernel
-                  kernelPackages = super.linuxPackagesFor self.hardened_linux_kernel;
-                })
-
-                # Step 2: Override NVIDIA driver package to use the custom kernel
-                (self: prev: {
-                  kernelPackages = prev.kernelPackages // {
-                    nvidiaPackages = prev.kernelPackages.nvidiaPackages // {
-                      beta = prev.kernelPackages.nvidiaPackages.beta.override {
-                        kernel = prev.kernelPackages.kernel;
-                      };
-                    };
-                  };
-                })
-
-                # Step 3: Sign the NVIDIA modules for Secure Boot
-                (self: prev: {
-                  kernelPackages = prev.kernelPackages // {
-                    nvidiaPackages = prev.kernelPackages.nvidiaPackages // {
-                      beta = prev.kernelPackages.nvidiaPackages.beta.overrideAttrs (old: {
-                        postInstall = (old.postInstall or "") + ''
-                          echo "Signing NVIDIA kernel modules for Secure Boot"
-                          for ko in $(find $out/lib/modules -name "*.ko"); do
-                            echo "Signing $ko"
-                            ${prev.kernelPackages.kernel.dev}/scripts/sign-file sha256 ${./MOK.priv} ${./MOK.pem} "$ko" || exit 1
-                          done
-                        '';
-                      });
-                    };
-                  };
+                
+                  boot.kernelPackages.nvidiaPackages.production = super.boot.kernelPackages.nvidiaPackages.production.overrideAttrs (old: {
+                    postInstall = (old.postInstall or "") + ''
+                      echo "🚨 NVIDIA OVERLAY IS RUNNING 🚨"
+                      echo "Signing NVIDIA kernel modules..."
+                      for mod in $out/lib/modules/*/misc/*.ko; do
+                          echo "Signing module: $mod"
+                          ${self.pkgs.kmod}/bin/sign-file sha256 \
+                              ${myPrivKey} \
+                              ${myPubCert} \
+                              "$mod" || exit 1
+                      done
+                    '';
+                  });
                 })
               ];
 
@@ -253,9 +263,9 @@
                 "zswap.enabled=1"
                 "zswap.max_pool_percent=10"
                 "modprobe.blacklist=nouveau"
-		        "rootfstype=f2fs"
-		        "nvme_core.default_ps_max_latency_us=0"
-		        "fips=1"
+                "rootfstype=f2fs"
+                "nvme_core.default_ps_max_latency_us=0"
+                "fips=1"
               ];
 
               kernelPatches = [
@@ -289,7 +299,7 @@
                   "sha256"
                   "vmd"
 
-		          # crypto
+                  # crypto
                   "aesni_intel"     # The gold standard for FIPS 140-2/3 compliance
                                     # Hardware-accelerate AES within the Intel CPU
                   "gf128mul"
@@ -297,22 +307,22 @@
 
                   "dm_crypt"        # LUKS encryption support for device mapper storage infrastructure
 
-		          "essiv"           # Encrypted Salt-Sector Initialization Vector is a transform for various encryption modes, mostly supporting block device encryption
+                  "essiv"           # Encrypted Salt-Sector Initialization Vector is a transform for various encryption modes, mostly supporting block device encryption
                   "authenc"
-		          "xts"             # XEX-based tweaked-codebook mode with ciphertext stealing -- like essiv, is designed specifically for block device encryption
+                  "xts"             # XEX-based tweaked-codebook mode with ciphertext stealing -- like essiv, is designed specifically for block device encryption
 
-		          # filesystems
+                  # filesystems
                   "ext4"            # Old time linux filesystem, used on the encrypted USB boot volume. Required because grub doesn't support F2FS yet.
                   "crc16"
                   "mbcache"
                   "jbd2"
-		          "f2fs"            # Flash-friendly filesystem support -- the top-layer of our storage stack
+                  "f2fs"            # Flash-friendly filesystem support -- the top-layer of our storage stack
                   "lz4_compress"
                   "lz4hc_compress"
                   "vfat"            # Windows FAT volumes, such as the FAT12 EFI partition
                   "fat"
 
-		          # storage
+                  # storage
                   "nvme"            # NVME drive support
                   "nvme_core"
                   "nvme_auth"
@@ -327,7 +337,7 @@
                   "dax"
                   "md_mod"
 
-		          # hardware support modules
+                  # hardware support modules
                   "ahci"            # SATA disk support
                   "libahci"
                   "sd_mod"          # SCSI disk support (/dev/sdX)
@@ -348,8 +358,8 @@
                 luks = {
                   cryptoModules = [
                     "aesni_intel"
-		            "essiv"
-		            "xts"
+                    "essiv"
+                    "xts"
                     "sha256"
                   ];
 
@@ -678,6 +688,13 @@
             };
 
             fileSystems = {
+              "/" =
+                {
+                  device = secrets.PLACEHOLDER_ROOT;
+                  fsType = "f2fs";
+                  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
+                };
+
               # Define filesystems for /boot and /boot/EFI
               # dm0 UUID (post-luksOpen)
               # EDIT
@@ -692,36 +709,29 @@
               "/boot/EFI" =
                 { device = secrets.PLACEHOLDER_EFI_FS_UUID;
                   fsType = "vfat";
-                  options = [ "umask=0077" ]; # Ensure proper permissions for the EFI partition
+                  options = [ "umask=0077" "fmask=0022" "dmask=0022" ]; # Ensure proper permissions for the EFI partition
                 };
 
-	      "/" =
-	        {
-		  device = secrets.PLACEHOLDER_ROOT;
-		  fsType = "f2fs";
-		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
-		};
+              "/var" =
+                {
+                  device = secrets.PLACEHOLDER_VAR;
+                  fsType = "f2fs";
+                  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
+                };
 
-	      "/var" =
-	        {
-		  device = secrets.PLACEHOLDER_VAR;
-		  fsType = "f2fs";
-		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
-		};
+              "/tmp" =
+                {
+                  device = secrets.PLACEHOLDER_TMP;
+                  fsType = "f2fs";
+                  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
+                };
 
-	      "/tmp" =
-	        {
-		  device = secrets.PLACEHOLDER_TMP;
-		  fsType = "f2fs";
-		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
-		};
-
-	      "/home" =
-	        {
-		  device = secrets.PLACEHOLDER_HOME;
-		  fsType = "f2fs";
-		  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
-		};
+              "/home" =
+                {
+                  device = secrets.PLACEHOLDER_HOME;
+                  fsType = "f2fs";
+                  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
+                };
             };
 
             hardware = {
@@ -773,7 +783,7 @@
 
                 # Optionally, you may need to select the appropriate driver version for
                 # your specific GPU.
-                package = config.boot.kernelPackages.nvidiaPackages.beta;
+                package = config.boot.kernelPackages.nvidiaPackages.production;
               };
 
               nvidia-container-toolkit = {
@@ -2203,7 +2213,7 @@
                 };
               };
 
-	      fstrim.enable = true;
+              fstrim.enable = true;
           
               # firmware update daemon
               fwupd.enable = true;
