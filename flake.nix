@@ -117,8 +117,8 @@
                   hardened_linux_kernel = super.linuxPackagesFor (super.linuxKernel.kernels.linux_6_13_hardened.overrideAttrs (old: {
                     dontConfigure = true;
                 
-                    nativeBuildInputs = (old.nativeBuildInputs or []) ++ [ super.kmod super.openssl super.hostname super.fish ];
-                    buildInputs = (old.buildInputs or []) ++ [ super.kmod super.openssl super.hostname super.fish ];
+                    nativeBuildInputs = (old.nativeBuildInputs or []) ++ [ super.kmod super.openssl super.hostname super.bash ];
+                    buildInputs = (old.buildInputs or []) ++ [ super.kmod super.openssl super.hostname super.bash ];
                 
                     buildPhase = ''
                       mkdir -p tmp_certs
@@ -198,20 +198,37 @@
                 
                     outputs = [ "out" "dev" ];
                   }));
+
                 
-                  boot.kernelPackages.nvidiaPackages.production = super.boot.kernelPackages.nvidiaPackages.production.overrideAttrs (old: {
-                    postInstall = (old.postInstall or "") + ''
+                  nvidiaPackages = self.hardened_linux_kernel.nvidiaPackages.beta.overrideAttrs (old: {
+                    preInstall = (if old.preInstall == null then "" else old.preInstall) + ''
                       echo "🚨 NVIDIA OVERLAY IS RUNNING 🚨"
-                      echo "Signing NVIDIA kernel modules..."
-                      for mod in $out/lib/modules/*/misc/*.ko; do
-                          echo "Signing module: $mod"
-                          ${self.pkgs.kmod}/bin/sign-file sha256 \
-                              ${myPrivKey} \
-                              ${myPubCert} \
-                              "$mod" || exit 1
+                      echo "🚨 NVIDIA PRE-FIXUP: Signing NVIDIA kernel modules before compression 🚨"
+                  
+                      SIGN_FILE="${self.hardened_linux_kernel.dev}/lib/modules/${old.kernelVersion}/source/scripts/sign-file"
+                      MOK_CERT="${self.hardened_linux_kernel.dev}/lib/modules/${old.kernelVersion}/source/MOK.pem"
+                      MOK_KEY="${self.hardened_linux_kernel.dev}/lib/modules/${old.kernelVersion}/source/MOK.priv"
+                  
+                      if [ ! -x "$SIGN_FILE" ]; then
+                        echo "❌ sign-file tool not found at $SIGN_FILE"
+                        exit 1
+                      fi
+                  
+                      echo "✅ Using sign-file: $SIGN_FILE"
+                      echo "✅ Signing NVIDIA kernel modules with MOK key: $MOK_KEY"
+                  
+                      # Find all uncompressed .ko modules and sign them
+                      for mod in $(find $out/lib/modules -type f -name "*.ko"); do
+                        echo "🔹 Signing module: $mod"
+                        $SIGN_FILE sha256 $MOK_KEY $MOK_CERT "$mod" || exit 1
                       done
+                  
+                      echo "✅ All modules signed successfully!"
                     '';
                   });
+                
+                  # Assign to kernel package set so the system uses it
+                  self.hardened_linux_kernel.nvidiaPackages.beta = self.nvidiaPackages;
                 })
               ];
 
@@ -783,7 +800,7 @@
 
                 # Optionally, you may need to select the appropriate driver version for
                 # your specific GPU.
-                package = config.boot.kernelPackages.nvidiaPackages.production;
+                package = config.boot.kernelPackages.nvidiaPackages.beta;
               };
 
               nvidia-container-toolkit = {
