@@ -5,7 +5,7 @@
     nixos-cosmic.url = "github:lilyinstarlight/nixos-cosmic";
 
     rust-overlay = {
-      url = "github:oxalica/rust-overlay?rev=260ff391290a2b23958d04db0d3e7015c8417401";
+      url = "github:oxalica/rust-overlay?rev=f03085549609e49c7bcbbee86a1949057d087199";
       inputs = {
         nixpkgs.follows = "nixos-cosmic/nixpkgs";
         flake-utils.url = "github:numtide/flake-utils";
@@ -19,9 +19,11 @@
         flake-utils.url = "github:numtide/flake-utils";
       };
     };
+
+    rtl8814au.url = "github:daveman1010221/8814au";
   };
 
-  outputs = { self, nixpkgs, nixos-cosmic, rust-overlay, myNeovimOverlay}:
+  outputs = { self, nixpkgs, nixos-cosmic, rust-overlay, myNeovimOverlay, rtl8814au }:
   let
     system = "x86_64-linux";
 
@@ -230,6 +232,12 @@
                   # Assign to kernel package set so the system uses it
                   self.hardened_linux_kernel.nvidiaPackages.beta = self.nvidiaPackages;
                 })
+
+                ({ config, pkgs, ... }: {
+                  boot.extraModulePackages = [
+                    (rtl8814au.packages.${pkgs.system}.rtl8814au.override { kernel = config.boot.kernelPackages.kernel; })
+                  ];
+                })
               ];
 
               config = {
@@ -283,6 +291,8 @@
                 "rootfstype=f2fs"
                 "nvme_core.default_ps_max_latency_us=0"
                 "fips=1"
+                "dm_crypt.max_read_size=1048576"
+                "dm_crypt.max_write_size=65536"
               ];
 
               kernelPatches = [
@@ -552,6 +562,21 @@
                 cups
                 deja-dup
                 delta
+                dhall
+                dhall-nix
+                dhall-yaml
+                dhall-json
+                dhall-docs
+                dhall-bash
+                dhall-nixpkgs
+                dhall-lsp-server
+                dhallPackages.Prelude
+                dhallPackages.dhall-kubernetes
+                haskellPackages.dhall-yaml
+                haskellPackages.dhall-toml
+                # haskellPackages.dhall-check <-- broken
+                # haskellPackages.dhall-secret <-- broken
+                haskellPackages.dhall-openapi
                 direnv
                 distrobox
                 doas
@@ -624,12 +649,14 @@
                 nix-prefetch-git
                 nixd
                 nvidia-container-toolkit
+                nvme-cli
                 nvtopPackages.intel
                 openssl
                 pandoc
                 patool
                 parted
                 pciutils
+                pkg-config
                 podman
                 podman-compose
                 podman-desktop
@@ -650,6 +677,7 @@
                 slirp4netns
                 sqlite
                 starship
+                sysstat
                 systeroid
                 trunk
                 #teams  <-- not currently supported on linux targets
@@ -664,6 +692,8 @@
                   vscodeExtensions = with vscode-extensions; [
                     bbenoist.nix
                     ms-azuretools.vscode-docker
+                    dhall.vscode-dhall-lsp-server
+                    dhall.dhall-lang
                   ];
                 })
                 viu
@@ -709,7 +739,7 @@
                 {
                   device = secrets.PLACEHOLDER_ROOT;
                   fsType = "f2fs";
-                  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
+                  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" "nobarrier" ];
                 };
 
               # Define filesystems for /boot and /boot/EFI
@@ -733,21 +763,21 @@
                 {
                   device = secrets.PLACEHOLDER_VAR;
                   fsType = "f2fs";
-                  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
+                  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" "nobarrier" ];
                 };
 
               "/tmp" =
                 {
                   device = secrets.PLACEHOLDER_TMP;
                   fsType = "f2fs";
-                  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
+                  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" "nobarrier" ];
                 };
 
               "/home" =
                 {
                   device = secrets.PLACEHOLDER_HOME;
                   fsType = "f2fs";
-                  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" ];
+                  options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" "nobarrier" ];
                 };
             };
 
@@ -930,6 +960,50 @@
                     chain forward {
                         type filter hook forward priority filter; policy drop;
                         ip6 daddr ::/0 drop
+                    }
+                }
+                table inet minikube {
+                    # INPUT chain (for packets destined to the host machine)
+                    chain input {
+                        type filter hook input priority filter; policy accept;
+                    
+                        # Allow incoming traffic from Minikube bridge
+                        iifname "br-cf15c35ab3cc" accept
+                    }
+                
+                    # FORWARD chain (for packets moving between networks)
+                    chain forward {
+                        type filter hook forward priority filter; policy accept;
+                    
+                        # Allow Minikube containers to communicate internally
+                        iifname "br-cf15c35ab3cc" oifname "br-cf15c35ab3cc" accept
+                    
+                        # Allow Minikube to reach the internet via Wi-Fi (requires NAT)
+                        iifname "br-cf15c35ab3cc" oifname "wlp0s20f3" accept
+                        iifname "wlp0s20f3" oifname "br-cf15c35ab3cc" accept
+                
+                        # Allow Minikube DNS (UDP 53) and SSH (TCP 22) forwarding
+                        iifname "br-cf15c35ab3cc" ip daddr 192.168.49.2 udp dport 53 accept
+                        iifname "br-cf15c35ab3cc" ip daddr 192.168.49.2 tcp dport 22 accept
+                    }
+                
+                    # OUTPUT chain (for packets leaving the host)
+                    chain output {
+                        type filter hook output priority filter; policy accept;
+                    
+                        # Allow Minikube to communicate with the host
+                        oifname "br-cf15c35ab3cc" accept
+                    
+                        # Allow multicast (fixes 224.0.0.22 drops)
+                        ip daddr 224.0.0.22 accept
+                    }
+                
+                    # POSTROUTING (for NAT masquerading when Minikube accesses the internet)
+                    chain postrouting {
+                        type nat hook postrouting priority srcnat; policy accept;
+                    
+                        # Masquerade Minikube traffic when accessing the internet
+                        oifname "wlp0s20f3" masquerade
                     }
                 }
               '';
@@ -2234,6 +2308,14 @@
           
               # firmware update daemon
               fwupd.enable = true;
+
+              # k3s is broken for systems that have interesting block storage
+              # arrangements, due to an issue with cAdvisor.
+              # k3s = {
+              #   enable = true;
+              #   role = "server";
+              #   extraFlags = toString [ "--container-runtime-endpoint unix:///run/containerd/containerd.sock" ];
+              # };
           
               printing = {
                 allowFrom = [ "localhost" ];
@@ -2348,14 +2430,38 @@
                 wants = [ "local-fs.target" ];
                 path = [ pkgs.lvm2 ];
                 script = ''
-                lvchange --readahead 1024 /dev/nix/tmp
-                lvchange --readahead 1024 /dev/nix/var
-                lvchange --readahead 1024 /dev/nix/root
-                lvchange --readahead 1024 /dev/nix/home
+                lvchange --readahead 2048 /dev/nix/tmp
+                lvchange --readahead 2048 /dev/nix/var
+                lvchange --readahead 2048 /dev/nix/root
+                lvchange --readahead 2048 /dev/nix/home
                 '';
                 serviceConfig.Type = "oneshot";
                 serviceConfig.RemainAfterExit = true;
               };
+
+              # user = {
+              #   services.nix-index-update = {
+              #     wantedBy = [ "default.target" ];
+              #     description = "Update nix-index database for user djshepard";
+              #     after = [ "network.target" ];
+              #     serviceConfig = {
+              #       Type = "oneshot";
+              #       ExecStart = "${pkgs.nix-index}/bin/nix-index";
+              #       Nice = 19;
+              #       IOSchedulingClass = "idle";
+              #     };
+              #   };
+              #   
+              #   timers.nix-index-update = {
+              #     wantedBy = [ "timers.target" ];
+              #     description = "Periodic nix-index update for user djshepard";
+              #     timerConfig = {
+              #       OnCalendar = "daily";
+              #       Persistent = true;
+              #       RandomizedDelaySec = "1h";
+              #     };
+              #   };
+              # };
             };
 
             swapDevices = [
@@ -2455,7 +2561,8 @@ EOF
                 }
               ];
             };
-            
+
+services.dbus.enable = true;  # Required for systemd user services
             users.groups.mlocate = {};
           
             virtualisation = {
@@ -2464,7 +2571,33 @@ EOF
               };
               docker = {
                 enable = true;
+                daemon.settings = {
+                    dns = ["192.168.1.1"];
+                    iptables = false;
+                    ip-forward = true;
+                    bridge = "none";
+                };
               };
+
+              # I tried enabling k3s, but it's broken.
+              # containerd = {
+              #   enable = true;
+              #   settings =
+              #     let
+              #       fullCNIPlugins = pkgs.buildEnv {
+              #         name = "full-cni";
+              #         paths = with pkgs; [
+              #           cni-plugins
+              #           cni-plugin-flannel
+              #         ];
+              #       };
+              #     in {
+              #       plugins."io.containerd.grpc.v1.cri".cni = {
+              #         bin_dir = "${fullCNIPlugins}/bin";
+              #         conf_dir = "/var/lib/rancher/k3s/agent/etc/cni/net.d/";
+              #       };
+              #     };
+              # };
             };
 
             # System copy configuration
