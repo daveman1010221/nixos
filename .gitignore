@@ -5,5 +5,3 @@ shell.nix.save
 secrets.nix
 hardware-configuration.nix
 .nvimlog
-MOK.pem
-MOK.priv
