@@ -19,29 +19,29 @@
       };
     };
 
-    #rtl8814au.url = "github:daveman1010221/8814au";
+    rtl8814au.url = "github:daveman1010221/8814au";
   };
 
-  outputs = { self, nixpkgs, nixos-cosmic, rust-overlay, myNeovimOverlay }:
+  outputs = { self, nixpkgs, nixos-cosmic, rust-overlay, myNeovimOverlay, rtl8814au }:
   let
     system = "x86_64-linux";
 
     pkgs = import nixpkgs { system = "x86_64-linux"; };
 
-        # Step 1: Dynamically import MOK certs into the Nix store
-      certsDerivation = pkgs.runCommand "certs" {} ''
-        mkdir -p $out
-        cp ${./MOK.pem} $out/MOK.pem
-        cp ${./MOK.priv} $out/MOK.priv
-      '';
+    # Step 1: Dynamically import MOK certs into the Nix store
+    certsDerivation = pkgs.runCommand "certs" {} ''
+      mkdir -p $out
+      cp ${./MOK.pem} $out/MOK.pem
+      cp ${./MOK.priv} $out/MOK.priv
+    '';
 
-      # Step 2: Read the certs from the store after the derivation runs
-      mokPem = builtins.readFile "${certsDerivation}/MOK.pem";
-      mokPriv = builtins.readFile "${certsDerivation}/MOK.priv";
+    # Step 2: Read the certs from the store after the derivation runs
+    mokPem = builtins.readFile "${certsDerivation}/MOK.pem";
+    mokPriv = builtins.readFile "${certsDerivation}/MOK.priv";
 
-      # Step 3: Ensure they are properly defined
-      myPubCert = builtins.toFile "MOK.pem" mokPem;
-      myPrivKey = builtins.toFile "MOK.priv" mokPriv;
+    # Step 3: Ensure they are properly defined
+    myPubCert = builtins.toFile "MOK.pem" mokPem;
+    myPrivKey = builtins.toFile "MOK.priv" mokPriv;
 
     myConfig = builtins.toFile ".config" (builtins.readFile (builtins.toString ./.config));
 
@@ -245,11 +245,11 @@
                   self.hardened_linux_kernel.nvidiaPackages.beta = self.nvidiaPackages;
                 })
 
-                # ({ config, pkgs, ... }: {
-                #   boot.extraModulePackages = [
-                #     (rtl8814au.packages.${pkgs.system}.rtl8814au.override { kernel = config.boot.kernelPackages.kernel; })
-                #   ];
-                # })
+                ({ config, pkgs, ... }: {
+                  boot.extraModulePackages = [
+                    (rtl8814au.packages.${pkgs.system}.rtl8814au.override { kernel = config.boot.kernelPackages.kernel; })
+                  ];
+                })
               ];
 
               config = {
@@ -781,7 +781,7 @@
                   device = secrets.PLACEHOLDER_VAR;
                   fsType = "f2fs";
                   options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" "nobarrier" ];
-                  neededForBoot = true;
+                  depends = [ "/" ];
                 };
 
               "/tmp" =
@@ -789,7 +789,7 @@
                   device = secrets.PLACEHOLDER_TMP;
                   fsType = "f2fs";
                   options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" "nobarrier" ];
-                  neededForBoot = true;
+                  depends = [ "/" ];
                 };
 
               "/home" =
@@ -797,7 +797,7 @@
                   device = secrets.PLACEHOLDER_HOME;
                   fsType = "f2fs";
                   options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" "nobarrier" ];
-                  neededForBoot = true;
+                  depends = [ "/" ];
                 };
             };
 
