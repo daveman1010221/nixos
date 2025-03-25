@@ -8,7 +8,6 @@
       url = "github:oxalica/rust-overlay?rev=f03085549609e49c7bcbbee86a1949057d087199";
       inputs = {
         nixpkgs.follows = "nixos-cosmic/nixpkgs";
-        flake-utils.url = "github:numtide/flake-utils";
       };
     };
 
@@ -20,10 +19,10 @@
       };
     };
 
-    rtl8814au.url = "github:daveman1010221/8814au";
+    #rtl8814au.url = "github:daveman1010221/8814au";
   };
 
-  outputs = { self, nixpkgs, nixos-cosmic, rust-overlay, myNeovimOverlay, rtl8814au }:
+  outputs = { self, nixpkgs, nixos-cosmic, rust-overlay, myNeovimOverlay }:
   let
     system = "x86_64-linux";
 
@@ -36,7 +35,7 @@
 
 
     # Load the secrets if the file exists, else use empty strings.
-    secrets = if builtins.pathExists ./secrets.nix then import ./secrets.nix else {
+    secrets = {#if builtins.pathExists ./secrets.nix then import ./secrets.nix else {
       PLACEHOLDER_NVME0 = "";
       PLACEHOLDER_NVME1 = "";
       PLACEHOLDER_BOOT_UUID = "";
@@ -233,11 +232,11 @@
                   self.hardened_linux_kernel.nvidiaPackages.beta = self.nvidiaPackages;
                 })
 
-                ({ config, pkgs, ... }: {
-                  boot.extraModulePackages = [
-                    (rtl8814au.packages.${pkgs.system}.rtl8814au.override { kernel = config.boot.kernelPackages.kernel; })
-                  ];
-                })
+                # ({ config, pkgs, ... }: {
+                #   boot.extraModulePackages = [
+                #     (rtl8814au.packages.${pkgs.system}.rtl8814au.override { kernel = config.boot.kernelPackages.kernel; })
+                #   ];
+                # })
               ];
 
               config = {
