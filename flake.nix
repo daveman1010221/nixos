@@ -26,12 +26,22 @@
   let
     system = "x86_64-linux";
 
-    # For kernel driver signing and loading.
+    pkgs = import nixpkgs { system = "x86_64-linux"; };
 
-    certsPath = "/etc/nixos/secrets";
+        # Step 1: Dynamically import MOK certs into the Nix store
+      certsDerivation = pkgs.runCommand "certs" {} ''
+        mkdir -p $out
+        cp ${./MOK.pem} $out/MOK.pem
+        cp ${./MOK.priv} $out/MOK.priv
+      '';
 
-    myPubCert = builtins.toFile "MOK.pem" (builtins.readFile "${certsPath}/MOK.pem");
-    myPrivKey = builtins.toFile "MOK.priv" (builtins.readFile "${certsPath}/MOK.priv");
+      # Step 2: Read the certs from the store after the derivation runs
+      mokPem = builtins.readFile "${certsDerivation}/MOK.pem";
+      mokPriv = builtins.readFile "${certsDerivation}/MOK.priv";
+
+      # Step 3: Ensure they are properly defined
+      myPubCert = builtins.toFile "MOK.pem" mokPem;
+      myPrivKey = builtins.toFile "MOK.priv" mokPriv;
 
     myConfig = builtins.toFile ".config" (builtins.readFile (builtins.toString ./.config));
 
