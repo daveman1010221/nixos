@@ -27,25 +27,27 @@
     system = "x86_64-linux";
 
     # For kernel driver signing and loading.
-    myPrivKey = builtins.toFile "MOK.priv" (builtins.readFile (builtins.toString ./MOK.priv));
 
-    myPubCert = builtins.toFile "MOK.pem" (builtins.readFile (builtins.toString ./MOK.pem));
+    certsPath = "/etc/nixos/secrets";
+
+    myPubCert = builtins.toFile "MOK.pem" (builtins.readFile "${certsPath}/MOK.pem");
+    myPrivKey = builtins.toFile "MOK.priv" (builtins.readFile "${certsPath}/MOK.priv");
 
     myConfig = builtins.toFile ".config" (builtins.readFile (builtins.toString ./.config));
 
 
     # Load the secrets if the file exists, else use empty strings.
     secrets = {#if builtins.pathExists ./secrets.nix then import ./secrets.nix else {
-      PLACEHOLDER_NVME0 = "";
-      PLACEHOLDER_NVME1 = "";
-      PLACEHOLDER_BOOT_UUID = "";
-      PLACEHOLDER_BOOT_FS_UUID = "";
-      PLACEHOLDER_EFI_FS_UUID = "";
-      PLACEHOLDER_ROOT = "";
-      PLACEHOLDER_VAR = "";
-      PLACEHOLDER_TMP = "";
-      PLACEHOLDER_HOME = "";
-      PLACEHOLDER_HOSTNAME = "";
+      PLACEHOLDER_NVME0 = "/dev/disk/by-id/nvme-eui.ace42e00310a1b382ee4ac0000000001";
+      PLACEHOLDER_NVME1 = "/dev/disk/by-id/nvme-eui.ace42e00310a1b372ee4ac0000000001";
+      PLACEHOLDER_BOOT_UUID = "/dev/disk/by-uuid/fd2eb4f6-6320-4e8c-b95d-59b38a37ebb7";
+      PLACEHOLDER_BOOT_FS_UUID = "/dev/disk/by-uuid/51cdc1cc-bcc7-4be8-95e3-b1ede8bef66c";
+      PLACEHOLDER_EFI_FS_UUID = "/dev/disk/by-uuid/93FA-31E7";
+      PLACEHOLDER_ROOT = "/dev/disk/by-uuid/bd552f84-1dfe-4a99-9167-1d17c83ce77a";
+      PLACEHOLDER_VAR = "/dev/disk/by-uuid/de0a6b69-acbb-4bba-b2ff-ab46c08310a4";
+      PLACEHOLDER_TMP = "/dev/disk/by-uuid/e852da06-c243-47a4-b915-06d5e464964a";
+      PLACEHOLDER_HOME = "/dev/disk/by-uuid/43a2c8d1-fa49-474d-85dc-4dee2986b8e5";
+      PLACEHOLDER_HOSTNAME = "precisionws";
     };
   in {
     nixosConfigurations = {
@@ -55,6 +57,7 @@
         modules = [
           ({ config, lib, pkgs, ... }: {
             nixpkgs = {
+              hostPlatform = lib.mkDefault "x86_64-linux";
               overlays = [
                 rust-overlay.overlays.default
                 myNeovimOverlay.overlays.default
@@ -273,7 +276,8 @@
               # kernel. It works fine for 'on the go' config, though. Considering making two kernel configs.
               kernelPackages = pkgs.hardened_linux_kernel;
 
-              #kernelModules = [ ];
+              kernelModules = [ "kvm-intel" ];
+
               kernelParams = [
                 "i8042.unlock"
                 "intel_idle.max_cstate=4"
@@ -377,6 +381,7 @@
                   "hid_generic"
                   "xhci_hcd"        # USB 3.x support
                   "xhci_pci"        # USB 3.x support
+                  "thunderbolt"
                 ];
 
                 # Define LUKS devices, including the encrypted /boot and NVMe devices
@@ -739,6 +744,7 @@
                   device = secrets.PLACEHOLDER_ROOT;
                   fsType = "f2fs";
                   options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" "nobarrier" ];
+                  neededForBoot = true;
                 };
 
               # Define filesystems for /boot and /boot/EFI
@@ -756,6 +762,8 @@
                 { device = secrets.PLACEHOLDER_EFI_FS_UUID;
                   fsType = "vfat";
                   options = [ "umask=0077" "fmask=0022" "dmask=0022" ]; # Ensure proper permissions for the EFI partition
+                  neededForBoot = true;
+                  depends = [ "/boot" ];
                 };
 
               "/var" =
@@ -763,6 +771,7 @@
                   device = secrets.PLACEHOLDER_VAR;
                   fsType = "f2fs";
                   options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" "nobarrier" ];
+                  neededForBoot = true;
                 };
 
               "/tmp" =
@@ -770,6 +779,7 @@
                   device = secrets.PLACEHOLDER_TMP;
                   fsType = "f2fs";
                   options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" "nobarrier" ];
+                  neededForBoot = true;
                 };
 
               "/home" =
@@ -777,10 +787,12 @@
                   device = secrets.PLACEHOLDER_HOME;
                   fsType = "f2fs";
                   options = [ "defaults" "atgc" "background_gc=on" "discard" "noatime" "nodiratime" "nobarrier" ];
+                  neededForBoot = true;
                 };
             };
 
             hardware = {
+              cpu.intel.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
               graphics.enable = true;
 
               # Effectively, this option adds udev rules that allow a
@@ -1006,6 +1018,7 @@
                     }
                 }
               '';
+              useDHCP = lib.mkDefault true;
             };
 
             programs = {
@@ -2608,9 +2621,6 @@ services.dbus.enable = true;  # Required for systemd user services
 
           # Additional modules
           nixos-cosmic.nixosModules.default
-
-          # Include your hardware configuration
-          ./hardware-configuration.nix
         ];
       };
     };
