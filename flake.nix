@@ -129,7 +129,7 @@
                   hardened_linux_kernel = super.linuxPackagesFor (super.linuxKernel.kernels.linux_6_13_hardened.overrideAttrs (old: {
                     dontConfigure = true;
                 
-                    nativeBuildInputs = (old.nativeBuildInputs or []) ++ [ super.kmod super.openssl super.hostname super.fish ];
+                    nativeBuildInputs = (old.nativeBuildInputs or []) ++ [ super.kmod super.openssl super.hostname super.qboot ];
                     buildInputs = (old.buildInputs or []) ++ [ super.kmod super.openssl super.hostname ];
                 
                     buildPhase = ''
@@ -298,6 +298,7 @@
                 "fips=1"
                 "dm_crypt.max_read_size=1048576"
                 "dm_crypt.max_write_size=65536"
+                "NVreg_EnableGpuFirmware=1"
               ];
 
               kernelPatches = [
@@ -317,9 +318,11 @@
                 };
               };
 
-              extraModulePackages = [
-                pkgs.hardened_linux_kernel.rtl8814au
-              ];
+              # A fucking compile error. I finally figure out how to reference this correctly and it's a fucking compile error.
+
+              # extraModulePackages = [
+               #  pkgs.hardened_linux_kernel.rtl8814au
+              # ];
 
               initrd = {
                 includeDefaultModules = false;  # <-- This is an annoying fucker, along with 'luks.cryptoModules' below...
@@ -796,7 +799,10 @@
             };
 
             hardware = {
-              cpu.intel.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
+              enableAllFirmware = true;
+              enableAllHardware = true;
+              cpu.intel.updateMicrocode = true;
+              cpu.x86.msr.enable = true;
               graphics.enable = true;
 
               # Effectively, this option adds udev rules that allow a
@@ -812,6 +818,7 @@
 
               nvidiaOptimus.disable = false;
               nvidia = {
+                gsp.enable = true;
                 prime = {
                   allowExternalGpu = false;
                   offload.enable = false; # Mutually exclusive with prime sync.
@@ -845,7 +852,7 @@
 
                 # Optionally, you may need to select the appropriate driver version for
                 # your specific GPU.
-                package = config.boot.kernelPackages.nvidiaPackages.beta;
+                package = pkgs.hardened_linux_kernel.nvidiaPackages.beta;
               };
 
               nvidia-container-toolkit = {
