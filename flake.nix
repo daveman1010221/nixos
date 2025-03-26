@@ -18,11 +18,9 @@
         flake-utils.url = "github:numtide/flake-utils";
       };
     };
-
-    rtl8814au.url = "github:daveman1010221/8814au";
   };
 
-  outputs = { self, nixpkgs, nixos-cosmic, rust-overlay, myNeovimOverlay, rtl8814au }:
+  outputs = { self, nixpkgs, nixos-cosmic, rust-overlay, myNeovimOverlay }:
   let
     system = "x86_64-linux";
 
@@ -131,8 +129,8 @@
                   hardened_linux_kernel = super.linuxPackagesFor (super.linuxKernel.kernels.linux_6_13_hardened.overrideAttrs (old: {
                     dontConfigure = true;
                 
-                    nativeBuildInputs = (old.nativeBuildInputs or []) ++ [ super.kmod super.openssl super.hostname super.bash ];
-                    buildInputs = (old.buildInputs or []) ++ [ super.kmod super.openssl super.hostname super.bash ];
+                    nativeBuildInputs = (old.nativeBuildInputs or []) ++ [ super.kmod super.openssl super.hostname super.fish ];
+                    buildInputs = (old.buildInputs or []) ++ [ super.kmod super.openssl super.hostname ];
                 
                     buildPhase = ''
                       mkdir -p tmp_certs
@@ -212,7 +210,6 @@
                 
                     outputs = [ "out" "dev" ];
                   }));
-
                 
                   nvidiaPackages = self.hardened_linux_kernel.nvidiaPackages.beta.overrideAttrs (old: {
                     preInstall = (if old.preInstall == null then "" else old.preInstall) + ''
@@ -243,12 +240,7 @@
                 
                   # Assign to kernel package set so the system uses it
                   self.hardened_linux_kernel.nvidiaPackages.beta = self.nvidiaPackages;
-                })
 
-                ({ config, pkgs, ... }: {
-                  boot.extraModulePackages = [
-                    (rtl8814au.packages.${pkgs.system}.rtl8814au.override { kernel = config.boot.kernelPackages.kernel; })
-                  ];
                 })
               ];
 
@@ -325,7 +317,11 @@
                 };
               };
 
-              # extraModulePackages = with config.boot.kernelPackages; [ ];
+              extraModulePackages = [
+                (pkgs.rtl8814au.packages.${pkgs.system}.rtl8814au.override {
+                  kernel = pkgs.hardened_linux_kernel.kernel;
+                })
+              ];
 
               initrd = {
                 includeDefaultModules = false;  # <-- This is an annoying fucker, along with 'luks.cryptoModules' below...
@@ -1621,7 +1617,7 @@
                   function mount_boot --description 'Mount the encrypted /boot and /boot/EFI partitions using Nix expressions'
                       pushd /etc/nixos
                       # Extract encrypted device path using Nix expressions
-                      set encrypted_device (nix eval --raw 'path:.#nixosConfigurations.${secrets.PLACEHOLDER_HOSTNAME}.config.boot.initrd.luks.devices."boot_crypt".device')
+                      set encrypted_device (nix eval --raw '.#nixosConfigurations.${secrets.PLACEHOLDER_HOSTNAME}.config.boot.initrd.luks.devices."boot_crypt".device')
                       if test -z "$encrypted_device"
                           echo "Could not retrieve encrypted device path from NixOS configuration."
                           return 1
@@ -1659,7 +1655,7 @@
                       end
                   
                       # Extract device path for /boot/EFI using Nix expressions
-                      set efi_device (nix eval --raw 'path:.#nixosConfigurations.${secrets.PLACEHOLDER_HOSTNAME}.config.fileSystems."/boot/EFI".device')
+                      set efi_device (nix eval --raw '.#nixosConfigurations.${secrets.PLACEHOLDER_HOSTNAME}.config.fileSystems."/boot/EFI".device')
                       if test -z "$efi_device"
                           echo "Could not retrieve /boot/EFI device path from NixOS configuration."
                           return 1
@@ -1803,7 +1799,7 @@
                       # Run nixos-rebuild switch
                       echo "Running nixos-rebuild switch..."
                       pushd /etc/nixos
-                      sudo nixos-rebuild switch --flake path:.
+                      sudo nixos-rebuild switch --flake .
                       popd
                       set rebuild_status $status
                   
