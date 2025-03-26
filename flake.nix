@@ -318,9 +318,7 @@
               };
 
               extraModulePackages = [
-                (pkgs.rtl8814au.packages.${pkgs.system}.rtl8814au.override {
-                  kernel = pkgs.hardened_linux_kernel.kernel;
-                })
+                pkgs.hardened_linux_kernel.rtl8814au
               ];
 
               initrd = {
