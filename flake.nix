@@ -320,9 +320,9 @@
 
               # A fucking compile error. I finally figure out how to reference this correctly and it's a fucking compile error.
 
-              # extraModulePackages = [
-               #  pkgs.hardened_linux_kernel.rtl8814au
-              # ];
+              extraModulePackages = [
+                pkgs.hardened_linux_kernel.rtl8814au
+              ];
 
               initrd = {
                 includeDefaultModules = false;  # <-- This is an annoying fucker, along with 'luks.cryptoModules' below...
