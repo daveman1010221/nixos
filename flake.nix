@@ -124,30 +124,30 @@
                       # allowMissing = true; # Force true
                     # };
                 # }) 
-          
+
                 (self: super: {
                   hardened_linux_kernel = super.linuxPackagesFor (super.linuxKernel.kernels.linux_6_13_hardened.overrideAttrs (old: {
                     dontConfigure = true;
-                
+
                     nativeBuildInputs = (old.nativeBuildInputs or []) ++ [ super.kmod super.openssl super.hostname super.qboot ];
                     buildInputs = (old.buildInputs or []) ++ [ super.kmod super.openssl super.hostname ];
-                
+
                     buildPhase = ''
                       mkdir -p tmp_certs
                       cp ${myConfig} tmp_certs/.config
                       cp ${myPubCert} tmp_certs/MOK.pem
                       cp ${myPrivKey} tmp_certs/MOK.priv
-                
+
                       # Ensure they are actually there before proceeding
                       ls -lah tmp_certs
-                
+
                       # Move them into place before compilation
                       cp tmp_certs/.config .config
                       cp tmp_certs/MOK.pem MOK.pem
                       cp tmp_certs/MOK.priv MOK.priv
-                
+
                       ls -alh
-                
+
                       make \
                         ARCH=${super.stdenv.hostPlatform.linuxArch} \
                         CROSS_COMPILE= \
@@ -158,15 +158,15 @@
                         -j$NIX_BUILD_CORES \
                         bzImage modules
                     '';
-                
+
                     installPhase = ''
                       export PATH=${super.openssl}/bin:$PATH
                       echo "Using OpenSSL from: $(which openssl)"
                       openssl version
-                
+
                       mkdir -p $out
                       mkdir -p $dev
-                
+
                       make \
                         INSTALL_PATH=$out \
                         INSTALL_MOD_PATH=$out \
@@ -174,14 +174,14 @@
                         O=. \
                         -j$NIX_BUILD_CORES \
                         headers_install modules_install
-                
+
                       cp arch/x86/boot/bzImage System.map $out/
-                
+
                       version=$(make O=. kernelrelease)
-                
+
                       # Prepare the source tree for external module builds
                       mkdir -p $dev/lib/modules/$version/source
-                
+
                       # Preserve essential files before cleanup
                       cp .config $dev/lib/modules/$version/source/.config
                       if [ -f Module.symvers ]; then cp Module.symvers $dev/lib/modules/$version/source/Module.symvers; fi
@@ -190,54 +190,54 @@
                         mkdir -p $dev/lib/modules/$version/source
                         cp -r include $dev/lib/modules/$version/source/
                       fi
-                
+
                       # Clean the build tree
                       make O=. clean mrproper
-                
+
                       # Copy the cleaned-up source tree before it gets removed.
                       cp -a . $dev/lib/modules/$version/source
-                
+
                       # **Change to the new source directory**
                       cd $dev/lib/modules/$version/source
-                
+
                       # Regenerate configuration and prepare for external module compilation
                       make O=$dev/lib/modules/$version/source \
                         -j$NIX_BUILD_CORES \
                         prepare modules_prepare
-                
+
                       ln -s $dev/lib/modules/$version/source $dev/lib/modules/$version/build
                     '';
-                
+
                     outputs = [ "out" "dev" ];
                   }));
-                
+
                   nvidiaPackages = self.hardened_linux_kernel.nvidiaPackages.beta.overrideAttrs (old: {
                     preInstall = (if old.preInstall == null then "" else old.preInstall) + ''
                       echo "🚨 NVIDIA OVERLAY IS RUNNING 🚨"
                       echo "🚨 NVIDIA PRE-FIXUP: Signing NVIDIA kernel modules before compression 🚨"
-                  
+
                       SIGN_FILE="${self.hardened_linux_kernel.dev}/lib/modules/${old.kernelVersion}/source/scripts/sign-file"
                       MOK_CERT="${self.hardened_linux_kernel.dev}/lib/modules/${old.kernelVersion}/source/MOK.pem"
                       MOK_KEY="${self.hardened_linux_kernel.dev}/lib/modules/${old.kernelVersion}/source/MOK.priv"
-                  
+
                       if [ ! -x "$SIGN_FILE" ]; then
                         echo "❌ sign-file tool not found at $SIGN_FILE"
                         exit 1
                       fi
-                  
+
                       echo "✅ Using sign-file: $SIGN_FILE"
                       echo "✅ Signing NVIDIA kernel modules with MOK key: $MOK_KEY"
-                  
+
                       # Find all uncompressed .ko modules and sign them
                       for mod in $(find $out/lib/modules -type f -name "*.ko"); do
                         echo "🔹 Signing module: $mod"
                         $SIGN_FILE sha256 $MOK_KEY $MOK_CERT "$mod" || exit 1
                       done
-                  
+
                       echo "✅ All modules signed successfully!"
                     '';
                   });
-                
+
                   # Assign to kernel package set so the system uses it
                   self.hardened_linux_kernel.nvidiaPackages.beta = self.nvidiaPackages;
 
@@ -320,9 +320,9 @@
 
               # A fucking compile error. I finally figure out how to reference this correctly and it's a fucking compile error.
 
-              extraModulePackages = [
-                pkgs.hardened_linux_kernel.rtl8814au
-              ];
+              # extraModulePackages = [
+              #   pkgs.hardened_linux_kernel.rtl8814au
+              # ];
 
               initrd = {
                 includeDefaultModules = false;  # <-- This is an annoying fucker, along with 'luks.cryptoModules' below...
@@ -415,11 +415,11 @@
 
                         if [ -e /dev/mapper/boot_crypt ]; then
                             echo "Preparing secure key storage..."
-            
+
                             # Define and create a secure mount point for keys
                             SENSITIVE_MOUNT="/sensitive"
                             mkdir -p $SENSITIVE_MOUNT
-            
+
                             # Mount a dedicated tmpfs for storing keys securely
                             mount -t tmpfs -o size=50M,mode=0700,noswap tmpfs $SENSITIVE_MOUNT
 
@@ -540,7 +540,7 @@
               #   disk_error_action = SUSPEND
               #   plugin_dir = /etc/audit/plugins.d
               # '';
-                
+
               # etc."audit/plugins.d/syslog.conf".text = ''
               #   active = yes
               #   direction = out
@@ -635,6 +635,11 @@
                 kitty
                 kitty-img
                 kitty-themes
+                kompose
+                kubectl
+                kind
+                kubernetes-helm
+                cri-o
                 libcanberra-gtk3
                 libreoffice-fresh
                 llvmPackages_19.clangUseLLVM
@@ -656,6 +661,7 @@
                 networkmanager-openvpn
                 networkmanager-vpnc
                 nftables
+                #iptables
                 nix-index
                 nix-prefetch-git
                 nixd
@@ -689,7 +695,7 @@
                 sqlite
                 starship
                 sysstat
-                systeroid
+                #systeroid
                 trunk
                 #teams  <-- not currently supported on linux targets
                 tinyxxd
@@ -887,9 +893,22 @@
                         ct state established,related accept
                         iif "lo" accept
                         tcp dport @inbound_whitelist ct state new accept
-                        jump sig_filter_both
+
+                        # Allow access to Kubernetes API server (default port 6443)
+                        tcp dport 6443 accept
+
+                        # (Optional) Allow CoreDNS (UDP/TCP on 53) from cluster-internal IPs
+                        ip saddr 10.244.0.0/16 udp dport 53 accept
+                        ip saddr 10.244.0.0/16 tcp dport 53 accept
+
+                        # Allow traffic to K8s API server on default service IP
+                        ip saddr 10.244.0.0/16 tcp dport 443 ip daddr 10.96.0.1 accept
+
+                        # (Optional) Allow kubelet metrics server or health checks (typically 10250, 10255)
+                        tcp dport { 10250, 10255 } accept
+
                         jump sig_filter_input
-                        iifname "wlp0s20f3" ip saddr { 172.0.0.0/8, 192.168.1.0/24 } accept
+                        iifname "wlp0s20f3" ip saddr { 10.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12 } accept
                         ip protocol icmp limit rate 10/second burst 20 packets accept
                         log prefix "INPUT-DROP: " level debug flags all counter packets 0 bytes 0 drop
                     }
@@ -903,10 +922,19 @@
                         tcp dport { 7770, 8443 } accept
                         tcp dport 8080 accept # Allow outbound traffic on port 8080
                         tcp dport 4173 accept # Allow outbound traffic on port 4173
+                        # Allow DNS resolution
+
+                        # Allow outgoing connections to remote registries and webhooks
+                        tcp dport { 80, 443 } accept
+
+                        # Allow API server access from tools running locally
+                        ip daddr 127.0.0.1 tcp dport 6443 accept
+
+                        # Allow kubelet and other cluster components to talk internally
+                        ip daddr 172.18.0.0/16 accept
+
                         oifname "lo" accept
-                        jump sig_filter_both
-                        jump sig_filter_output
-                        oifname "wlp0s20f3" ip daddr { 172.0.0.0/8, 192.168.1.0/24 } accept
+                        oifname "wlp0s20f3" ip daddr { 10.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12 } accept
                         oifname "tun0" accept
                         ip protocol icmp limit rate 10/second burst 20 packets accept
                         log prefix "OUTPUT-DROP: " level debug flags all counter packets 12 bytes 738 drop
@@ -915,12 +943,23 @@
                     chain forward {
                         type filter hook forward priority filter; policy drop;
                         ct state established,related accept
-                        # Allow traffic from Docker containers to the outside world on port 8080
-                        iifname "docker0" tcp dport 8080 oifname != "docker0" accept
-                        iifname "docker0" tcp dport 4173 oifname != "docker0" accept
-                        # Allow traffic to Docker containers from the outside world on port 8080
-                        iifname != "docker0" tcp dport 8080 oifname "docker0" accept
-                        iifname != "docker0" tcp dport 4173 oifname "docker0" accept
+
+                        # KIND/Docker rules
+                        jump docker_user
+                        jump docker_isolation_stage_1
+                        oifname "docker0" ct state related,established accept
+                        oifname "docker0" jump docker
+                        iifname "docker0" oifname != "docker0" accept
+                        iifname "docker0" oifname "docker0" accept
+
+                        # Allow pod subnet to talk to control plane
+                        ip saddr 10.244.0.0/16 ip daddr 172.18.0.0/16 accept
+                        # Allow pod subnet to talk to Kubernetes services (e.g., 10.96.0.1:443)
+                        ip saddr 10.244.0.0/16 ip daddr 10.96.0.0/12 accept
+
+                        tcp dport @inbound_whitelist iifname "docker0" oifname != "docker0" accept
+                        tcp dport @inbound_whitelist iifname != "docker0" oifname "docker0" accept
+
                         # Allow bridged traffic
                         iifname "br0" oifname "br0" accept
                         ip protocol icmp limit rate 10/second burst 20 packets accept
@@ -962,10 +1001,20 @@
                         icmp type 0-255 icmp code > 15 drop
                     }
 
-                    chain sig_filter_output {
+                    chain docker {
+                      iifname != "docker0" oifname "docker0" ip daddr 172.18.0.2 tcp dport 6443 accept
                     }
 
-                    chain sig_filter_both {
+                    chain docker_user {
+                      # Placeholder for user-defined rules (was a RETURN in iptables)
+                    }
+
+                    chain docker_isolation_stage_1 {
+                      iifname "docker0" oifname != "docker0" jump docker_isolation_stage_2
+                    }
+
+                    chain docker_isolation_stage_2 {
+                      oifname "docker0" drop
                     }
                 }
                 table ip6 filter {
@@ -984,60 +1033,16 @@
                         ip6 daddr ::/0 drop
                     }
                 }
-                table inet minikube {
-                    # INPUT chain (for packets destined to the host machine)
-                    chain input {
-                        type filter hook input priority filter; policy accept;
-                    
-                        # Allow incoming traffic from Minikube bridge
-                        iifname "br-cf15c35ab3cc" accept
-                    }
-                
-                    # FORWARD chain (for packets moving between networks)
-                    chain forward {
-                        type filter hook forward priority filter; policy accept;
-                    
-                        # Allow Minikube containers to communicate internally
-                        iifname "br-cf15c35ab3cc" oifname "br-cf15c35ab3cc" accept
-                    
-                        # Allow Minikube to reach the internet via Wi-Fi (requires NAT)
-                        iifname "br-cf15c35ab3cc" oifname "wlp0s20f3" accept
-                        iifname "wlp0s20f3" oifname "br-cf15c35ab3cc" accept
-                
-                        # Allow Minikube DNS (UDP 53) and SSH (TCP 22) forwarding
-                        iifname "br-cf15c35ab3cc" ip daddr 192.168.49.2 udp dport 53 accept
-                        iifname "br-cf15c35ab3cc" ip daddr 192.168.49.2 tcp dport 22 accept
-                    }
-                
-                    # OUTPUT chain (for packets leaving the host)
-                    chain output {
-                        type filter hook output priority filter; policy accept;
-                    
-                        # Allow Minikube to communicate with the host
-                        oifname "br-cf15c35ab3cc" accept
-                    
-                        # Allow multicast (fixes 224.0.0.22 drops)
-                        ip daddr 224.0.0.22 accept
-                    }
-                
-                    # POSTROUTING (for NAT masquerading when Minikube accesses the internet)
-                    chain postrouting {
-                        type nat hook postrouting priority srcnat; policy accept;
-                    
-                        # Masquerade Minikube traffic when accessing the internet
-                        oifname "wlp0s20f3" masquerade
-                    }
-                }
               '';
               useDHCP = lib.mkDefault true;
             };
 
             programs = {
-           
+
               command-not-found.enable = false;
               nix-index.enable = true;
               nix-index.enableFishIntegration = true;
-           
+
               fish = {
                 enable = true;
                 useBabelfish = true;
@@ -1046,57 +1051,57 @@
                   config.enable = true;
                   functions.enable = true;
                 };
-           
+
                 interactiveShellInit = ''
                   # /etc/fish/config.fish: DO NOT EDIT -- this file has been generated automatically.
-                  
+
                   # if we haven't sourced the general config, do it
                   if not set -q __fish_nixos_general_config_sourced
                     source /etc/fish/shellInit.fish
-                  
-                    
-                  
+
+
+
                     # and leave a note so we don't source this config section again from
                     # this very shell (children will source the general config anew)
                     set -g __fish_nixos_general_config_sourced 1
                   end
-                  
+
                   # if we haven't sourced the login config, do it
                   status is-login; and not set -q __fish_nixos_login_config_sourced
                   and begin
                     source /etc/fish/loginShellInit.fish
-                  
-                    
-                  
+
+
+
                     # and leave a note so we don't source this config section again from
                     # this very shell (children will source the general config anew)
                     set -g __fish_nixos_login_config_sourced 1
                   end
-                  
+
                   # if we haven't sourced the interactive config, do it
                   status is-interactive; and not set -q __fish_nixos_interactive_config_sourced
                   and begin
-                    
+
                     alias l 'ls -alh'
                   alias ll 'ls -l'
                   alias ls 'ls --color=tty'
-                  
+
                     source /etc/fish/interactiveShellInit.fish
-                  
-                    
+
+
                     # This is a gross hack. Home-manager has options that aren't valid for the
                   # system-wide nixos configuration. As a result I have to source the plug-ins
                   # directly to get them to load. Further, this needs to happen as soon as
                   # possible in the interactive shell initialization because these will override
                   # _my_ overrides (below).
-                  
+
                   # grc
                   source ${pkgs.fishPlugins.grc}/share/fish/vendor_conf.d/grc.fish 
                   source ${pkgs.fishPlugins.grc}/share/fish/vendor_functions.d/grc.wrap.fish 
-                  
+
                   # bass
                   source ${pkgs.fishPlugins.bass}/share/fish/vendor_functions.d/bass.fish
-                  
+
                   # bobthefish
                   source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/__bobthefish_glyphs.fish
                   source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/fish_mode_prompt.fish
@@ -1107,29 +1112,29 @@
                   source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/fish_prompt.fish
                   source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/fish_greeting.fish
                   source ${pkgs.fishPlugins.bobthefish}/share/fish/vendor_functions.d/bobthefish_display_colors.fish
-                  
-                  
+
+
                   # foreign-env
-                  
-                  
+
+
                   # Handle root user shell needs.
                   if set -q DOAS_USER
                       set -gx CURRENT_USER_HOME /home/$DOAS_USER
                   else
                       set -gx CURRENT_USER_HOME $HOME
                   end
-                  
+
                   function boot_is_mounted --description "Checks if /boot and /boot/EFI are both mounted. If run with 'quiet' argument, simply returns a code."
                       set quiet $argv[1]
-                  
+
                       # Check if /boot is a mount point
                       mountpoint -q /boot
                       set boot_mounted $status
-                  
+
                       # Check if /boot/EFI is a mount point
                       mountpoint -q /boot/EFI
                       set efi_mounted $status
-                  
+
                       if test $boot_mounted -eq 0 -a $efi_mounted -eq 0
                           if not test "$quiet" = "quiet"
                               echo "/boot and /boot/EFI are mounted."
@@ -1142,7 +1147,7 @@
                           return 1
                       end
                   end
-                  
+
                   function boot_toggle_mounts --description="Toggle mounting of encrypted boot volumes"
                       if boot_is_mounted "quiet"
                           # If boot is mounted, unmount it
@@ -1168,7 +1173,7 @@
                           end
                       end
                   end
-                  
+
                   function certs_extract_dod --description='This process is a pain. Get the p7b, convert it to a PEM, split the pem, rename the individual files.'
                       set src_file $argv[1]
                       openssl pkcs7 -inform der -in $src_file -print_certs -out $src_file.pem
@@ -1182,16 +1187,16 @@
                       end
                       popd
                   end
-                  
+
                   function display_fzf_files --description="Call fzf and preview file contents using bat."
                       set preview_command "bat --theme=gruvbox-dark --color=always --style=header,grid --line-range :400 {}"
                       fzf --ansi --preview $preview_command
                   end
-                  
+
                   function display_rg_piped_fzf --description="Pipe ripgrep output into fzf"
                       rg . -n --glob "!.git/" | fzf
                   end
-                  
+
                   function do_startup --description="Call this from an interacive shell at startup to set the environment per interactive preferences."
                       set -l container_count (count (docker ps -q))
                       if test $container_count -gt 0
@@ -1201,7 +1206,7 @@
                       echo 1 | doas tee /proc/sys/vm/swappiness
                       hostname_update
                   end
-                  
+
                   function export --description="Emulates the bash export command"
                       if [ $argv ] 
                           set var (echo $argv | cut -f1 -d=)
@@ -1211,7 +1216,7 @@
                           echo 'export var=value'
                       end
                   end
-                  
+
                   function fd_fzf --description="Pipe fd output to fzf"
                       set fd_exists (which fd)
                       if test -z "$fd_exists"
@@ -1229,11 +1234,11 @@
                           echo "Must provide a valid search path."
                       end
                   end
-                  
+
                   function filename_get_random --description="Sometimes you need a random name for a file and UUIDs suck"
                       pwgen --capitalize --numerals --ambiguous 16 1
                   end
-                  
+
                   function files_compare --description="Requires two file paths to compare."
                       if test $argv[1] = "" -o $argv[2] = ""
                           echo "Arguments required for two files. Exiting."
@@ -1245,7 +1250,7 @@
                           return 1
                       end
                   end
-                  
+
                   function files_compare_verbose --description="Text output for files_compare"
                       if files_compare $argv[1] $argv[2]
                           echo "Hashes match."
@@ -1255,7 +1260,7 @@
                           return 1
                       end
                   end
-                  
+
                   function fish_greeting --description="Displays the Fish logo and some other init stuff."
                       set_color $fish_color_autosuggestion
                       set_color normal
@@ -1270,7 +1275,7 @@
                               lolcat --force | \
                               cat
                   end
-                  
+
                   # This doesn't seem to work any longer with new setup. Consider removing.
                   #function font_size --description="Adjusts the console font point size."
                       #if count $argv > /dev/null
@@ -1279,11 +1284,11 @@
                           #gsettings get org.gnome.desktop.interface monospace-font-name
                       #end
                   #end
-                  
+
                   function hash_get --description="Return a hash of the input string."
                       echo -n $argv[1] | sha1sum | cut -d ' ' -f 1
                   end
-                  
+
                   function hostname_update --description="Update hostname to reflect current IP address."
                       echo "This function needs updated for nixos."
                       # This is a reasonably safe way to grab the currently configured network
@@ -1294,7 +1299,7 @@
                           #cut -d ' ' -f 2 | \
                           #string sub --end -1 | \
                           #rg wl)
-                  
+
                       # This is a reasonably safe way to grab the current IP address of the current network device.
                       #set m_ip (ip -4 addr list | \
                           #rg $m_if | \
@@ -1302,16 +1307,16 @@
                           #string trim | \
                           #cut -d ' ' -f 2 | \
                           #rg -o '((1?[0-9][0-9]?|2[0-4][0-9]|25[0-5])\.){3}(1?[0-9][0-9]?|2[0-4][0-9]|25[0-5])')
-                  
+
                       #set NEW_HOSTNAME ${secrets.PLACEHOLDER_HOSTNAME}.$m_ip.nip.io
-                  
+
                       # nip.io creates resolvable hostnames by embedding their IP in the hostname
                       # and then resolving the hostname to that IP address.
                       # doas hostnamectl set-hostname ${secrets.PLACEHOLDER_HOSTNAME}.$m_ip.nip.io
                       #echo $NEW_HOSTNAME | \
                           #doas tee /etc/hostname /proc/sys/kernel/hostname >/dev/null
                   end
-                  
+
                   function journal_read --description 'Custom journal output format'
                       journalctl -xf --no-pager --no-hostname -o json-seq --output-fields=MESSAGE,_CMDLINE,_PID | while read -l line
                           # Preprocess the JSON entry to remove hidden characters
@@ -1323,10 +1328,10 @@
                               def adjust_timestamp:
                                   ((2024 - 1900) * 31536000) +   # Adjustment for year difference
                                   (31 * 86400);                 # Adjustment for leap days
-                  
+
                               def generate_timestamp:
                                   now | strftime("%Y-%m-%d %H:%M:%S");
-                  
+
                               delpaths([
                                   ["_BOOT_ID"],
                                   ["__MONOTONIC_TIMESTAMP"],
@@ -1350,7 +1355,7 @@
                           end
                       end
                   end
-                  
+
                   function json_validate --description="Validate provided json against provided schema. E.g., 'validate_json file.json schema.json'. Can also handle json input from pipe via stdin."
                       # jsonschema only operates via file input, which is inconvenient.
                       if ! isatty stdin
@@ -1362,18 +1367,18 @@
                           jsonschema -F "{error.message}" -i $argv[1] $argv[2]
                       end
                   end
-                  
+
                   function layout_kitty --description="Create a layout file for kitty, based on the current layout, and reload kitty's config"
                       # Define the output file
                       set output_file $CURRENT_USER_HOME/.config/kitty/my_layout.conf
-                  
+
                       # Start writing to the output file
                       echo "# Kitty layout configuration" > $output_file
                       echo "Creating layout configuration..."
-                  
+
                       # Query Kitty for the current layout
                       set layout (kitty @ ls | jq '.')
-                  
+
                       # Extract the necessary details and write to the configuration file
                       for window in (echo $layout | jq -c '.[]')
                           echo "new_os_window" >> $output_file
@@ -1381,10 +1386,10 @@
                               set tab_title (echo $tab | jq -r '.title')
                               echo "new_tab $tab_title" >> $output_file
                               echo "layout grid" >> $output_file
-                  
+
                               # Collect all panes and their attributes
                               set panes (echo $tab | jq -c '.windows[]')
-                              
+
                               for pane in $panes
                                   set pane_id (echo $pane | jq -r '.id')
                                   set is_focused (echo $pane | jq -r '.is_focused')
@@ -1392,24 +1397,24 @@
                                   set lines (echo $pane | jq -r '.lines')
                                   set cwd (echo $pane | jq -r '.cwd')
                                   set cmd (echo $pane | jq -r '.cmdline | join(" ")')
-                  
+
                                   if test $is_focused = "true"
                                       echo "focus_window $pane_id" >> $output_file
                                   end
-                  
+
                                   echo "split --cwd $cwd --cmd \"$cmd\" --dimensions $lines,$columns" >> $output_file
                               end
                           end
                       end
-                  
+
                       echo "Layout configuration saved to $output_file"
-                  
+
                       # Reload Kitty configuration using kitten icat (a hack to force reload)
                       kitty +kitten icat --clear
-                  
+
                       echo "Kitty configuration reloaded"
                   end
-                  
+
                   function lol --description="lolcat inside cowsay"
                       echo $argv | \
                           cowsay -n -f (set cows (ls /usr/share/cowsay/cows); \
@@ -1421,28 +1426,28 @@
                           lolcat --force | \
                           cat
                   end
-                  
+
                   function lol_fig --description="lolcat inside a figlet"
                       echo $argv | figlet | lolcat -f | cat
                   end
-                  
+
                   function lh --description 'An approximation of "ls -alh", but uses eza, a replacement for ls, with some useful options as defaults.'
                       eza --group --header --group-directories-first --long --icons --git --all --binary --dereference --links $argv
                   end
-                  
+
                   function lht --description="ls -alh, but show only files modified today"
                       lh (find . -maxdepth 1 -type f -newermt (date +%Y-%m-%d) ! -newermt (date -d tomorrow +%Y-%m-%d))
                   end
-                  
+
                   function mac_generate --description="Generate valid MAC addresses, quickly. If an argument is provided, it must be one of: arista aruba cisco dell emc extreme_networks hp juniper riverbed vmware. The argument controls the vendor prefix portion of the generated MAC."
                       # The following are vendor-owned MAC ranges, used for prefix generation:
                       set arista \
                       "00:1c:73" "28:99:3a" "40:01:07" "44:4c:a8"
-                  
+
                       set aruba \
                       "00:0b:86" "00:1a:1e" "00:24:6c" "04:bd:88" "18:64:72" "20:4c:03" "24:de:c6" "40:e3:d6" "6c:f3:7f" "70:3a:0e" \
                       "84:d4:7e" "94:b4:0f" "9c:1c:12" "ac:a3:1e" "b4:5d:50" "d8:c7:c8" "f0:5c:19"
-                  
+
                       set cisco \
                       "00:00:0c" "00:01:42" "00:01:64" "00:01:96" "00:01:97" "00:01:c7" "00:01:c9" "00:02:17" "00:02:3d" "00:02:4a" \
                       "00:02:4b" "00:02:7d" "00:02:7e" "00:02:b9" "00:02:ba" "00:02:fc" "00:02:fd" "00:03:31" "00:03:32" "00:03:6b" \
@@ -1558,7 +1563,7 @@
                       "b4:b5:2f" "b8:af:67" "bc:ea:fa" "c0:91:34" "c4:34:6b" "c8:b5:ad" "c8:cb:b8" "c8:d3:ff" "cc:3e:5f" "d0:7e:28" \
                       "d0:bf:9c" "d4:85:64" "d4:c9:ef" "d8:94:03" "d8:9d:67" "d8:d3:85" "dc:4a:3e" "e0:07:1b" "e4:11:5b" "e8:39:35" \
                       "e8:f7:24" "ec:8e:b5" "ec:9a:74" "ec:b1:d7" "f0:62:81" "f0:92:1c" "f4:03:43" "f4:ce:46" "fc:15:b4" "fc:3f:db" \
-                  
+
                       set juniper \
                       "00:05:85" "00:10:db" "00:12:1e" "00:14:f6" "00:17:cb" "00:19:e2" "00:1b:c0" "00:1d:b5" "00:1f:12" "00:21:59" \
                       "00:22:83" "00:23:9c" "00:24:dc" "00:26:88" "00:31:46" "00:90:69" "08:81:f4" "08:b2:58" "0c:05:35" "0c:86:10" \
@@ -1568,12 +1573,12 @@
                       "80:ac:ac" "84:18:88" "84:b5:9c" "84:c1:c1" "88:a2:5e" "88:e0:f3" "9c:cc:83" "a8:d0:e5" "ac:4b:c8" "b0:a8:6e" \
                       "b0:c6:9a" "cc:e1:7f" "d4:04:ff" "dc:38:e1" "ec:13:db" "ec:3e:f7" "f0:1c:2d" "f4:a7:39" "f4:b5:2f" "f4:cc:55" \
                       "f8:c0:01"
-                  
+
                       set riverbed "00:0e:b6" "00:25:50" "6c:98:eb"
                       set vmware "00:05:69" "00:0c:29" "00:1c:14" "00:50:56"
-                  
+
                       set all_macs $arista $aruba $cisco $dell $emc $extreme_networks $hp $juniper $riverbed $vmware
-                  
+
                       if test -n $argv[1]
                           set vendor_names arista aruba cisco dell emc extreme_networks hp juniper riverbed vmware
                           if contains $argv[1] $vendor_names
@@ -1601,20 +1606,20 @@
                               end
                           end
                       end
-                  
+
                       set hexchars "0123456789abcdef"
-                  
+
                       # Vendors (Modified "top ten" in network hardware vendors listings)
                       set prefix_count (count $all_macs)
                       set random_mac (random 1 $prefix_count)
                       set mac_prefix $all_macs[$random_mac]
-                  
+
                       set suffix (for n in (seq 6); echo -n (string sub --start (random 1 16) --length 1 $hexchars); end | sed -e 's/\(..\)/:\1/g')
-                  
+
                       # Example: 00:60:2f is the vendor prefix for Cisco. So, effectively, you're saying you are a piece of Cisco hardware if you use their suffix.
                       echo $mac_prefix$suffix
                   end
-                  
+
                   function man --description="Get the page, man"
                       ${pkgs.man}/bin/man $argv | bat --language man --style plain
                   end
@@ -1627,14 +1632,14 @@
                           echo "Could not retrieve encrypted device path from NixOS configuration."
                           return 1
                       end
-                  
+
                       # Resolve physical device if the device path is a symlink
                       set encrypted_device_physical (readlink -f "$encrypted_device")
                       if test -z "$encrypted_device_physical"
                           echo "Could not resolve physical encrypted device path."
                           return 1
                       end
-                  
+
                       # Check if boot_crypt is already open
                       if test -e /dev/mapper/boot_crypt
                           echo "Encrypted boot device is already open. Skipping luksOpen..."
@@ -1646,7 +1651,7 @@
                               return 1
                           end
                       end
-                  
+
                       # Mount /boot if not already mounted
                       if mountpoint -q /boot
                           echo "/boot is already mounted. Skipping mount..."
@@ -1658,21 +1663,21 @@
                               return 1
                           end
                       end
-                  
+
                       # Extract device path for /boot/EFI using Nix expressions
                       set efi_device (nix eval --raw '.#nixosConfigurations.${secrets.PLACEHOLDER_HOSTNAME}.config.fileSystems."/boot/EFI".device')
                       if test -z "$efi_device"
                           echo "Could not retrieve /boot/EFI device path from NixOS configuration."
                           return 1
                       end
-                  
+
                       # Resolve physical device if the device path is a symlink
                       set efi_device_physical (readlink -f "$efi_device")
                       if test -z "$efi_device_physical"
                           echo "Could not resolve physical /boot/EFI device path."
                           return 1
                       end
-                  
+
                       # Mount /boot/EFI if not already mounted
                       if mountpoint -q /boot/EFI
                           echo "/boot/EFI is already mounted. Skipping mount..."
@@ -1684,11 +1689,11 @@
                               return 1
                           end
                       end
-                  
+
                       echo "Boot partitions have been mounted successfully."
                       popd
                   end
-                  
+
                   function unmount_boot
                       # Unmount /boot/EFI
                       if mountpoint -q /boot/EFI
@@ -1697,7 +1702,7 @@
                       else
                           echo "/boot/EFI is not mounted."
                       end
-                  
+
                       # Unmount /boot
                       if mountpoint -q /boot
                           echo "Unmounting /boot..."
@@ -1705,7 +1710,7 @@
                       else
                           echo "/boot is not mounted."
                       end
-                  
+
                       # Close the encrypted boot partition
                       if test -e /dev/mapper/boot_crypt
                           echo "Closing encrypted boot partition..."
@@ -1714,17 +1719,17 @@
                           echo "Encrypted boot partition is already closed."
                       end
                   end
-                  
+
                   function myps --description="ps auww --ppid 2 -p2 --deselect"
                       ps auww --ppid 2 -p2 --deselect
                   end
-                  
+
                   function nvim_goto_files --description="Open fzf to find a file, then open it in neovim"
                       set nvim_exists (which nvim)
                       if test -z "$nvim_exists"
                           return
                       end
-                  
+
                       set selection (display_fzf_files)
                       if test -z "$selection"
                           return
@@ -1732,13 +1737,13 @@
                           nvim $selection
                       end
                   end
-                  
+
                   function nvim_goto_line --description="ripgrep to find contents, search results using fzf, open selected result in neovim, on the appropriate line."
                       set nvim_exists (which nvim)
                       if test -z "$nvim_exists"
                           return
                       end
-                  
+
                       set selection (display_rg_piped_fzf)
                       if test -z "$selection"
                           return
@@ -1748,7 +1753,7 @@
                           nvim +$line $filename
                       end
                   end
-                  
+
                   function is_valid_dir --description="Checks if the argument passed is a valid directory path"
                       if test (is_valid_argument $argv) = "true" -a (path_exists $argv) = "true" -a (is_a_directory $argv) = "true"
                           echo "true"
@@ -1756,7 +1761,7 @@
                           echo "false"
                       end
                   end
-                  
+
                   function is_valid_argument --description="Checks if it has been passed a valid argument"
                       # Is there a valid argument?
                       if test (count $argv) -gt 0
@@ -1765,7 +1770,7 @@
                           echo "false"
                       end
                   end
-                  
+
                   function path_exists --description="Checks if the path exists"
                       # Does it exist?
                       if test -e $argv[1]
@@ -1774,7 +1779,7 @@
                           echo "false"
                       end
                   end
-                  
+
                   function is_a_directory --description="Checks if the path is a directory"
                       # Is it a directory?
                       if test -d $argv[1]
@@ -1783,12 +1788,12 @@
                           echo "false"
                       end
                   end
-                  
+
                   function nixos_update --description 'Update NixOS configuration with automatic boot mount handling'
                       # Check if boot is mounted
                       boot_is_mounted "quiet"
                       set -l boot_was_mounted $status
-                  
+
                       # If boot was not mounted originally, mount it now
                       if test $boot_was_mounted -ne 0
                           echo "Boot volumes are not fully mounted. Mounting them now..."
@@ -1800,14 +1805,14 @@
                       else
                           echo "Boot volumes are already mounted."
                       end
-                  
+
                       # Run nixos-rebuild switch
                       echo "Running nixos-rebuild switch..."
                       pushd /etc/nixos
                       sudo nixos-rebuild switch --flake .
                       popd
                       set rebuild_status $status
-                  
+
                       # After the rebuild, unmount only if we mounted them in this function
                       if test $boot_was_mounted -ne 0
                           echo "Unmounting boot volumes (since they were not mounted originally)."
@@ -1819,11 +1824,11 @@
                       else
                           echo "WARNING: Boot volumes remain mounted."
                       end
-                  
+
                       # Return nixos-rebuild's status
                       return $rebuild_status
                   end
-                  
+
                   function path_exists --description="Checks if the path exists"
                       # Does it exist?
                       if test -e $argv[1]
@@ -1832,7 +1837,7 @@
                           echo "false"
                       end
                   end
-                  
+
                   # Inspired by a Fish plug-in for Mac OS, this will work on Ubuntu, possibly others.
                   function ocd --description="Open the current terminal directory in your default file manager."
                       echo "This function needs updated for nixos."
@@ -1843,17 +1848,17 @@
                           #xdg-open $PWD 2>&1 > /dev/null
                       #end
                   end
-                  
+
                   function pbcopy --description="Like, on Mac OS."
                       echo "This function needs updated for nixos."
                       wl-copy $argv
                   end
-                  
+
                   function pbpaste --description="Like, on Mac OS."
                       echo "This function needs updated for nixos."
                       wl-paste
                   end
-                  
+
                   function port_find_open --description="Finds an open upper port"
                       # lower and upper port bounds borrowed from Bash.
                       while :
@@ -1862,24 +1867,24 @@
                       end
                       echo $PULSE_PORT
                   end
-                  
+
                   function prettyjson --description="Pretty print JSON output"
                       python -m json.tool $argv[1]
                   end
-                  
+
                   function realtime_check --description="See what rtkit-daemon is up to."
                       # We need the journal to just dump everything at once and not block.
                       set SYSTEMD_PAGER cat
-                  
+
                       # Get journal entries in a form we can use.
                       # set json_journal (journalctl --no-hostname -xb -u rtkit-daemon --output=json)
-                  
+
                       # Find journal entries related to rtkit performing a renice.
                       # set downselect (echo $json_journal | jq -r 'select(.MESSAGE | contains("Successfully made thread")) | .MESSAGE')
-                  
+
                       # Extract the PIDs of processes that are being reniced by rtkit.
                       # set pids (echo $downselect | awk '{print $7}' | sort --sort=numeric | uniq)
-                  
+
                       # Show the PIDs that are still alive. Tell us the name of the command and its nice level.
                       # echo $pids | xargs -I{} ps -p {} -o cmd= -o pid= -o nice=
                       journalctl --no-hostname -xb -u rtkit-daemon --output=json | \
@@ -1889,7 +1894,7 @@
                           uniq | \
                           xargs -I{} ps -p {} -o cmd= -o pid= -o nice=
                   end
-                  
+
                   function root_toggle_immutable --description="It's good to keep immutable root filesystem, unless it isn't."
                       if root_is_immutable "quiet"
                           doas mount -o remount rw /
@@ -1934,15 +1939,15 @@
                   function showlog --description="journalctl with some niceties for realtime viewing"
                       journalctl -xf --no-hostname
                   end
-                  
+
                   function signal_start --description="Start signal with appropriate options"
                       signal-desktop-beta --no-sandbox >/dev/null 2>&1 &
                   end
-                  
+
                   # function sudo --description="doas is great but it fucks up the environment for root and is difficult to fix in other ways."
                   # env WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR XAUTHORITY=$XAUTHORITY $argv
                   # end
-                  
+
                   function tmp_toggle_immutable --description="It's good to keep immutable tmp filesystem, unless it isn't."
                       if tmp_is_immutable "quiet"
                           doas mount -o remount rw /tmp
@@ -1950,7 +1955,7 @@
                           doas mount -o remount ro /tmp
                       end
                   end
-                  
+
                   function keyring_unlock --description="unlocks the gnome keyring from the shell"
                       read -s -P "Password: " pass
                       for m in (echo -n $pass | gnome-keyring-daemon --replace --unlock)
@@ -1958,31 +1963,31 @@
                       end
                       set -e pass
                   end
-                  
+
                   function var_erase --description="Fish shell is missing a proper ability to delete a var from all scopes."
                       set -el $argv[1]
                       set -eg $argv[1]
                       set -eU $argv[1]
                   end
-                  
+
                   function yaml_to_json --description="Converts YAML input to JSON output."
                       python -c 'import sys, yaml, json; y=yaml.safe_load(sys.stdin.read()); print(json.dumps(y))' $argv[1] | read; or exit -1
                   end
-                  
+
                   # TODO: make sure this is still correct. This is used for updatedb, I seem to recall.
                   set -gx PRUNEPATHS /dev /proc /sys /media /mnt /lost+found /nix /sys /tmp
-                  
+
                   # For scripting code automation tasks.
                   set -gx CODE_ROOT $CURRENT_USER_HOME/Documents/projects/codes
-                  
+
                   # You'll want to install some nerd fonts, patched for powerline support of the theme.
                   # Recommend: 'UbuntuMono Nerd Font 13'
                   # gsettings set org.gnome.desktop.interface monospace-font-name 'UbuntuMono Nerd Font 13'
                   set -gx theme_nerd_fonts yes
-                  
+
                   # bobthefish is the theme of choice. This setting chooses a default color scheme.
                   #set -g theme_color_scheme gruvbox
-                  
+
                   # Gruvbox Color Palette
                   set -l foreground ebdbb2
                   set -l selection 282828 
@@ -1994,7 +1999,7 @@
                   set -l cyan 8ec07c
                   set -l blue 83a598
                   set -l purple d3869b
-                  
+
                   # Syntax Highlighting Colors
                   set -g fish_color_normal $foreground
                   set -g fish_color_command $cyan
@@ -2010,35 +2015,35 @@
                   set -g fish_color_operator $green
                   set -g fish_color_escape $blue
                   set -g fish_color_autosuggestion $comment
-                  
+
                   # Completion Pager Colors
                   set -g fish_pager_color_progress $comment
                   set -g fish_pager_color_prefix $cyan
                   set -g fish_pager_color_completion $foreground
                   set -g fish_pager_color_description $comment
-                  
+
                   set -gx theme_color_scheme gruvbox
-                  
+
                   set -gx theme_display_vi yes
                   set -gx theme_display_sudo_user yes
                   set -gx theme_show_exit_status yes
                   set -gx theme_display_jobs_verbose yes
-                  
+
                   # Vi key bindings
                   set -gx fish_key_bindings fish_vi_key_bindings
-                  
+
                   # Starship
                   source (starship init fish --print-full-init | psub)
-                  
+
                   # Atuin
                   atuin init fish | source
-                  
+
                   set -gx LS_COLORS 'rs=0:di=00;34:ln=00;36:mh=00:pi=40;33:so=00;35:do=00;35:bd=40;33;00:cd=40;33;00:or=40;31;00:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=38;5;196:*.yaml=38;5;226:*.yml=38;5;226:*.json=38;5;226:*.csv=38;5;226:*.tar=38;5;207:*.tgz=38;5;207:*.arc=38;5;207:*.arj=38;5;207:*.taz=38;5;207:*.lha=38;5;207:*.lz4=38;5;207:*.lzh=38;5;207:*.lzma=38;5;207:*.tlz=38;5;207:*.txz=38;5;207:*.tzo=38;5;207:*.t7z=38;5;207:*.zip=38;5;207:*.z=38;5;207:*.dz=38;5;207:*.gz=38;5;207:*.lrz=38;5;207:*.lz=38;5;207:*.lzo=38;5;207:*.xz=38;5;207:*.zst=38;5;207:*.tzst=38;5;207:*.bz2=38;5;207:*.bz=38;5;207:*.tbz=38;5;207:*.tbz2=38;5;207:*.tz=38;5;207:*.deb=38;5;207:*.rpm=38;5;207:*.jar=38;5;207:*.war=38;5;207:*.ear=38;5;207:*.sar=38;5;207:*.rar=38;5;207:*.alz=38;5;207:*.ace=38;5;207:*.zoo=38;5;207:*.cpio=38;5;207:*.7z=38;5;207:*.rz=38;5;207:*.cab=38;5;207:*.wim=38;5;207:*.swm=38;5;207:*.dwm=38;5;207:*.esd=38;5;207:*.jpg=00;35:*.jpeg=00;35:*.mjpg=00;35:*.mjpeg=00;35:*.gif=00;35:*.bmp=00;35:*.pbm=00;35:*.pgm=00;35:*.ppm=00;35:*.tga=00;35:*.xbm=00;35:*.xpm=00;35:*.tif=00;35:*.tiff=00;35:*.png=00;35:*.svg=00;35:*.svgz=00;35:*.mng=00;35:*.pcx=00;35:*.mov=00;35:*.mpg=00;35:*.mpeg=00;35:*.m2v=00;35:*.mkv=00;35:*.webm=00;35:*.webp=00;35:*.ogm=00;35:*.mp4=00;35:*.m4v=00;35:*.mp4v=00;35:*.vob=00;35:*.qt=00;35:*.nuv=00;35:*.wmv=00;35:*.asf=00;35:*.rm=00;35:*.rmvb=00;35:*.flc=00;35:*.avi=00;35:*.fli=00;35:*.flv=00;35:*.gl=00;35:*.dl=00;35:*.xcf=00;35:*.xwd=00;35:*.yuv=00;35:*.cgm=00;35:*.emf=00;35:*.ogv=00;35:*.ogx=00;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:'
-                  
+
                   set -gx EZA_COLORS '*.tar=38;5;203:*.tgz=38;5;203:*.arc=38;5;203:*.arj=38;5;203:*.taz=38;5;203:*.lha=38;5;203:*.lz4=38;5;203:*.lzh=38;5;203:*.lzma=38;5;203:*.tlz=38;5;203:*.txz=38;5;203:*.tzo=38;5;203:*.t7z=38;5;203:*.zip=38;5;203:*.z=38;5;203:*.dz=38;5;203:*.gz=38;5;203:*.lrz=38;5;203:*.lz=38;5;203:*.lzo=38;5;203:*.xz=38;5;203:*.zst=38;5;203:*.tzst=38;5;203:*.bz2=38;5;203:*.bz=38;5;203:*.tbz=38;5;203:*.tbz2=38;5;203:*.tz=38;5;203:*.deb=38;5;203:*.rpm=38;5;203:*.jar=38;5;203:*.war=38;5;203:*.ear=38;5;203:*.sar=38;5;203:*.rar=38;5;203:*.alz=38;5;203:*.ace=38;5;203:*.zoo=38;5;203:*.cpio=38;5;203:*.7z=38;5;203:*.rz=38;5;203:*.cab=38;5;203:*.wim=38;5;203:*.swm=38;5;203:*.dwm=38;5;203:*.esd=38;5;203:*.doc=38;5;109:*.docx=38;5;109:*.pdf=38;5;109:*.txt=38;5;109:*.md=38;5;109:*.rtf=38;5;109:*.odt=38;5;109:*.yaml=38;5;172:*.yml=38;5;172:*.json=38;5;172:*.toml=38;5;172:*.conf=38;5;172:*.config=38;5;172:*.ini=38;5;172:*.env=38;5;172:*.jpg=38;5;132:*.jpeg=38;5;132:*.png=38;5;132:*.gif=38;5;132:*.bmp=38;5;132:*.tiff=38;5;132:*.svg=38;5;132:*.mp3=38;5;72:*.wav=38;5;72:*.aac=38;5;72:*.flac=38;5;72:*.ogg=38;5;72:*.m4a=38;5;72:*.mp4=38;5;72:*.avi=38;5;72:*.mov=38;5;72:*.mkv=38;5;72:*.flv=38;5;72:*.wmv=38;5;72:*.c=38;5;142:*.cpp=38;5;142:*.py=38;5;142:*.java=38;5;142:*.js=38;5;142:*.ts=38;5;142:*.go=38;5;142:*.rs=38;5;142:*.php=38;5;142:*.html=38;5;142:*.css=38;5;142::*.nix=38;5;142:*.rs=38;5;142di=38;5;109:ur=38;5;223:uw=38;5;203:ux=38;5;142:ue=38;5;142:gr=38;5;223:gw=38;5;203:gx=38;5;142:tr=38;5;223:tw=38;5;203:tx=38;5;142:su=38;5;208:sf=38;5;208:xa=38;5;108:nb=38;5;244:nk=38;5;108:nm=38;5;172:ng=38;5;208:nt=38;5;203:ub=38;5;244:uk=38;5;108:um=38;5;172:ug=38;5;208:ut=38;5;203:lc=38;5;208:lm=38;5;208:uu=38;5;223:gu=38;5;223:un=38;5;223:gn=38;5;223:da=38;5;109:ga=38;5;108:gm=38;5;109:gd=38;5;203:gv=38;5;142:gt=38;5;108:gi=38;5;244:gc=38;5;203:Gm=38;5;108:Go=38;5;172:Gc=38;5;142:Gd=38;5;203:xx=38;5;237'
-                  
+
                   set -gx BROWSER /etc/profiles/per-user/djshepard/bin/firefox
-                  
+
                   # Set these to get Wayland working...
                   ############################################################
                   set -gx _JAVA_AWT_WM_NONREPARENTING 1
@@ -2046,60 +2051,60 @@
                   set -gx QT_QPA_PLATFORM "wayland"
                   set -gx SDL_VIDEODRIVER wayland
                   set -gx WLR_NO_HARDWARE_CURSORS 1
-                  
+
                   ############################################################
-                  
+
                   if set -q KITTY_INSTALLATION_DIR
                       set --global KITTY_SHELL_INTEGRATION enabled no-sudo
                       source "$KITTY_INSTALLATION_DIR/shell-integration/fish/vendor_conf.d/kitty-shell-integration.fish"
                       set --prepend fish_complete_path "$KITTY_INSTALLATION_DIR/shell-integration/fish/vendor_completions.d"
                   end
-                  
+
                   # This version uses 'fd', instead of find.
                   set -xg FZF_CTRL_T_COMMAND "fd --type file --hidden 2>/dev/null | sed 's#^\./##'"
-                  
+
                   set -xg BAT_THEME gruvbox-dark
-                  
+
                   set -xg MANPAGER "sh -c 'col -bx | bat --language man --style plain'"
-                  
+
                   set -xg FZF_DEFAULT_OPTS '--prompt="🔭 " --height 80% --layout=reverse --border'
-                  
+
                   set -xg FZF_DEFAULT_COMMAND 'rg --files --no-ignore --hidden --follow --glob "!.git/"'
-                  
+
                   set -xg BAT_THEME gruvbox-dark
-                  
+
                   set -xg EDITOR ${pkgs.neovim}/bin/nvim
-                  
+
                   #set -xg VIM $CURRENT_USER_HOME/.config/nvim
-                  
+
                   set -xg TERM xterm-kitty
                   #set -xg TERM xterm-256color
-                  
+
                   set -xg SHELL ${pkgs.fish}/bin/fish
-                  
+
                   set -xg NIXOS_OZONE_WL 1
-                  
+
                   # Aliases:
                   function nvimf
                       nvim_goto_files $argv
                   end
-                  
+
                   function nviml
                       nvim_goto_line $argv
                   end
-                  
+
                   function fdfz
                       fd_fzf $argv
                   end
-                  
+
                   function rgk
                       rg --hyperlink-format=kitty $argv
                   end
-                  
+
                   function nvrun
                       env __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia __NV_PRIME_RENDER_OFFLOAD_PROVIDER=NVIDIA-G0 __VK_LAYER_NV_optimus=NVIDIA_only GBM_BACKEND=nvidia-drm $argv
                   end
-                  
+
                   # add completions generated by NixOS to $fish_complete_path
                   begin
                     # joins with null byte to accommodate all characters in paths, then respectively gets all paths before (exclusive) / after (inclusive) the first one including "generated_completions",
@@ -2112,8 +2117,8 @@
                   if not test -d $__fish_user_data_dir/generated_completions
                     /nix/store/sf6y4arqcm100rnnl3dhpg732i774zp6-coreutils-9.5/bin/mkdir $__fish_user_data_dir/generated_completions
                   end
-                  
-                  
+
+
                     # and leave a note so we don't source this config section again from
                     # this very shell (children will source the general config anew,
                     # allowing configuration changes in, e.g, aliases, to propagate)
@@ -2121,56 +2126,56 @@
                   end
                 '';
               };
-           
+
               git = {
                   enable = true;
                   lfs.enable = true;
                   package = "${pkgs.gitFull}";
                   #prompt.enable = true;
               };
-           
+
               gnupg.agent = {
                 enable = true;
                 enableSSHSupport = true;
               };
-           
+
               # Some programs need SUID wrappers, can be configured further or are
               # started in user sessions.
               mtr.enable = true;
-           
+
               tmux = {
                 enable = true;
                 shortcut = "a";
                 aggressiveResize = true;  #Disable for iTerm
                 baseIndex = 1;
                 newSession = true;
-           
+
                 # Stop tmux+escape craziness.
                 escapeTime = 0;
-           
+
                 # Force tmux to use /tmp for sockets (WSL2 compat)
                 secureSocket = true;
-           
+
                 plugins = with pkgs; [
                   tmuxPlugins.better-mouse-mode
                 ];
-           
+
                 extraConfig = ''
                   set -g mouse on
                   set -g default-terminal "screen-256color"
                   set -g focus-events on
-           
+
                   set -ga terminal-overrides ",*256col*:Tc"
-           
+
                   set-environment -g COLORTERM "truecolor"
-           
+
                   # easy-to-remember split pane commands
                   bind | split-window -h -c "#{pane_current_path}"
                   bind - split-window -v -c "#{pane_current_path}"
                   bind c new-window -c "#{pane_current_path}"
                 '';
               };
-           
+
               xwayland.enable = true;
             };
 
@@ -2183,16 +2188,16 @@
               # "audit sub-system's daemon", which is necessary to have a fucking audit
               # sub-system.
               # auditd.enable = true;
-          
+
               # audit = {
               #   enable = true;
-          
+
               #   backlogLimit = 8192;
-          
+
               #   failureMode = "printk";
-          
+
               #   rateLimit = 1000;
-          
+
               #   # Define audit rules
               #   rules = [
               #     "-D"
@@ -2211,45 +2216,20 @@
               #   ];
               # };
 
-              # apparmor = {
-              #   enableCache = true;
-              #   killUnconfinedConfinables = false;
-              #   enable = true;
-          
-              #   # There are presently two sources of installable profiles,
-              #   # 'apparmor-profiles' and 'roddhjav-apparmor-rules', which you can view
-              #   # using: "nix-build '<nixpkgs>' -A apparmor-profiles", for example...
-              #   # Once you've decided which profiles you want and from which package,
-              #   # you can configure the profiles here:
-              #   policies = {
-              #     "firefox" = {
-              #       enable = true;
-              #       enforce = true;
-              #       profile = builtins.readFile "${pkgs.apparmor-profiles}/share/apparmor/extra-profiles/firefox";
-              #     };
-              #     # "cupsd" = {
-              #     #     enable = true;
-              #     #     enforce = true;
-              #     #     profile = ''
-              #     #     '';
-              #     # };
-              #   };
-              # };
-          
               doas = {
                 enable = true;
                 wheelNeedsPassword = true;
               };
-          
+
               # Configure PAM audit settings for specific services if necessary
               pam.services.login = {
                 # ttyAudit.enable = true;
                 setLoginUid = true;
               };
-          
+
               # pam.services.djshepard.enableAppArmor = true;
             };
-            
+
             services = {
               # Necessary for CUPS local network printer discovery, probably
               # some other stuff, too.
@@ -2271,9 +2251,9 @@
                 openFirewall = true;  # 5353
                 nssmdns4 = true;
               };
-          
+
               blueman.enable = true;
-          
+
               clamav = {
                 scanner.enable = true;
                 updater.enable = true;
@@ -2298,20 +2278,18 @@
                   };
                 };
               };
-          
-              # dbus.apparmor = "enabled";
-          
+
               desktopManager.cosmic.enable = true;
               displayManager.cosmic-greeter.enable = true;
               flatpak.enable = true;
-          
+
               fail2ban = {
                 banaction = "nftables-multiport";
                 bantime-increment.enable = true;
                 bantime-increment.rndtime = "8m";
                 enable = true;
                 packageFirewall = "${pkgs.nftables}";
-          
+
                 jails = {
                   sshd = {
                     settings = {
@@ -2328,18 +2306,10 @@
               };
 
               fstrim.enable = true;
-          
+
               # firmware update daemon
               fwupd.enable = true;
 
-              # k3s is broken for systems that have interesting block storage
-              # arrangements, due to an issue with cAdvisor.
-              # k3s = {
-              #   enable = true;
-              #   role = "server";
-              #   extraFlags = toString [ "--container-runtime-endpoint unix:///run/containerd/containerd.sock" ];
-              # };
-          
               printing = {
                 allowFrom = [ "localhost" ];
                 browsing = false;
@@ -2354,50 +2324,50 @@
                 webInterface = true;
                 cups-pdf.enable = true;
               };
-          
+
               power-profiles-daemon.enable = true;
               upower.enable = true;
-          
+
               xserver = {
                 # Required for DE to launch.
                 enable = true;
-          
+
                 # Exclude default X11 packages I don't want.
                 excludePackages = with pkgs; [ xterm ];
               };
-          
+
               # Load nvidia driver for Xorg and Wayland
               xserver.videoDrivers = ["nvidia"];
-          
+
               locate.enable = true;
               locate.package = pkgs.plocate;
-          
+
               lvm.enable = true;
-          
+
               # Enable the OpenSSH daemon.
               openssh.enable = true;
             };
 
             systemd = {
-          
+
               # Override the auditd systemd service, so that we can actually configured
               # the daemon.
               # services.auditd = {
               #   description = "Linux Audit daemon";
-          
+
               #   wantedBy = [ "sysinit.target" ];
               #   after = [ "local-fs.target" "systemd-tmpfiles-setup.service" ];
               #   before = [ "sysinit.target" "shutdown.target" ];
               #   conflicts = [ "shutdown.target" ];
-          
+
               #   environment = {
               #     LOCALE_ARCHIVE = "${pkgs.glibcLocales}/lib/locale/locale-archive";
               #     TZDIR = "${pkgs.tzdata}/share/zoneinfo";
               #   };
-          
+
               #   preStart = "${pkgs.coreutils}/bin/mkdir -p /var/log/audit";
               # };
-          
+
               services.lockBoot = {
                 description = "Manage the encrypted /boot partition";
                 wantedBy = [ "multi-user.target" ];
@@ -2415,11 +2385,11 @@
                 };
                 script = ''
                   #!${pkgs.bash}/bin/bash
-            
+
                   # Graceful attempts to unmount:
                   umount /boot/EFI >& /dev/null || true
                   umount /boot >& /dev/null || true
-            
+
                   # Function to check and log open file handles
                   checkAndLog() {
                     mountpoint=$1
@@ -2430,14 +2400,14 @@
                       fi
                     fi
                   }
-          
+
                   checkAndLog /boot/EFI
                   checkAndLog /boot
-            
+
                   # Forceful unmount if still needed
                   mountpoint -q /boot/EFI && umount -l /boot/EFI || true
                   mountpoint -q /boot && umount -l /boot || true
-            
+
                   # Close encrypted volume
                   if [ -e /dev/mapper/boot_crypt ]; then
                     cryptsetup luksClose boot_crypt || {
@@ -2447,7 +2417,7 @@
                 '';
                 restartIfChanged = false;  # Deny the insanity.
               };
-          
+
               services."set-lvm-readahead" = {
                 description = "Set read-ahead for LVM LV to optimize performance";
                 wants = [ "local-fs.target" ];
@@ -2461,30 +2431,6 @@
                 serviceConfig.Type = "oneshot";
                 serviceConfig.RemainAfterExit = true;
               };
-
-              # user = {
-              #   services.nix-index-update = {
-              #     wantedBy = [ "default.target" ];
-              #     description = "Update nix-index database for user djshepard";
-              #     after = [ "network.target" ];
-              #     serviceConfig = {
-              #       Type = "oneshot";
-              #       ExecStart = "${pkgs.nix-index}/bin/nix-index";
-              #       Nice = 19;
-              #       IOSchedulingClass = "idle";
-              #     };
-              #   };
-              #   
-              #   timers.nix-index-update = {
-              #     wantedBy = [ "timers.target" ];
-              #     description = "Periodic nix-index update for user djshepard";
-              #     timerConfig = {
-              #       OnCalendar = "daily";
-              #       Persistent = true;
-              #       RandomizedDelaySec = "1h";
-              #     };
-              #   };
-              # };
             };
 
             swapDevices = [
@@ -2525,20 +2471,20 @@
                   [core]
                       pager = delta
                       autocrlf = false
-                  
+
                   [interactive]
                       diffFilter = delta --color-only
-                  
+
                   [delta]
                       navigate = true    # use n and N to move between diff sections
                       light = false      # set to true if you're in a terminal w/ a light background color (e.g. the default macOS terminal)
                       side-by-side = true
                       line-numbers = true
                       theme = gruvbox-dark
-                  
+
                   [merge]
                       conflictstyle = diff3
-                  
+
                   [diff]
                       colorMoved = default
                   [filter "lfs"]
@@ -2566,7 +2512,7 @@ EOF
             # Define a user account. Don't forget to set a password with ‘passwd’.
             users.users.djshepard = {
               isNormalUser = true;
-          
+
               # 'mkpasswd'
               hashedPassword = ''$y$j9T$TsZjcgKr0u3TvD1.0de.W/$c/utzJh2Mkg.B38JKR7f3rQprgZ.RwNvUaoGfE/OD8D'';
               extraGroups = [ "wheel" "mlocate" "docker" ]; # Enable ‘sudo’ for the user.
@@ -2587,8 +2533,9 @@ EOF
 
 services.dbus.enable = true;  # Required for systemd user services
             users.groups.mlocate = {};
-          
+
             virtualisation = {
+              containerd.enable = true;
               podman = {
                 enable = true;
               };
@@ -2598,29 +2545,9 @@ services.dbus.enable = true;  # Required for systemd user services
                     dns = ["192.168.1.1"];
                     iptables = false;
                     ip-forward = true;
-                    bridge = "none";
+                    #bridge = "none";
                 };
               };
-
-              # I tried enabling k3s, but it's broken.
-              # containerd = {
-              #   enable = true;
-              #   settings =
-              #     let
-              #       fullCNIPlugins = pkgs.buildEnv {
-              #         name = "full-cni";
-              #         paths = with pkgs; [
-              #           cni-plugins
-              #           cni-plugin-flannel
-              #         ];
-              #       };
-              #     in {
-              #       plugins."io.containerd.grpc.v1.cri".cni = {
-              #         bin_dir = "${fullCNIPlugins}/bin";
-              #         conf_dir = "/var/lib/rancher/k3s/agent/etc/cni/net.d/";
-              #       };
-              #     };
-              # };
             };
 
             # System copy configuration
