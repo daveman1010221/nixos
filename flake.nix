@@ -45,7 +45,7 @@
 
 
     # Load the secrets if the file exists, else use empty strings.
-    secrets = if builtins.pathExists ./secrets.nix then import ./secrets.nix else {
+    secrets = {
       PLACEHOLDER_NVME0 = "";
       PLACEHOLDER_NVME1 = "";
       PLACEHOLDER_BOOT_UUID = "";
@@ -318,14 +318,19 @@
                 };
               };
 
-              # A fucking compile error. I finally figure out how to reference this correctly and it's a fucking compile error.
-
+              # A compile error prevents me from having drivers for my Alfa
+              # Networks AWUS 1900 USB Wifi adapter. Supposedly, this driver
+              # will in the upstream kernel in 6.15.
               # extraModulePackages = [
               #   pkgs.hardened_linux_kernel.rtl8814au
               # ];
 
               initrd = {
-                includeDefaultModules = false;  # <-- This is an annoying fucker, along with 'luks.cryptoModules' below...
+                includeDefaultModules = false;  # <-- This, along with
+                                                # 'luks.cryptoModules' below,
+                                                # causes unexpected driver
+                                                # loading that isn't kosher for
+                                                # a FIPS kernel...
 
                 # Ensure the initrd includes necessary modules for encryption, RAID, and filesystems
                 availableKernelModules = lib.mkForce [
@@ -957,6 +962,12 @@
                         # Allow pod subnet to talk to Kubernetes services (e.g., 10.96.0.1:443)
                         ip saddr 10.244.0.0/16 ip daddr 10.96.0.0/12 accept
 
+                        # This rule clears up some noisy kernel messages when
+                        # coredns attempts to find the outbound dns server.
+                        # This is not the ideal solution, coredns probably
+                        # should do its own external resolves. TODO
+                        ip saddr 172.18.0.0/16 ip daddr 192.168.1.1 udp dport 53 accept
+
                         tcp dport @inbound_whitelist iifname "docker0" oifname != "docker0" accept
                         tcp dport @inbound_whitelist iifname != "docker0" oifname "docker0" accept
 
@@ -1188,6 +1199,19 @@
                       popd
                   end
 
+                  function detect_secrets_leaked --description 'Scan flake.nix for committed secrets'
+                      set -l flake_file $argv[1]
+    
+                      set -l matches (grep -E 'PLACEHOLDER_.*= *"[^"]+"' $flake_file | grep -v '="";')
+    
+                      if test -n "$matches"
+                          echo "$matches"
+                          return 1  # ❌ Secrets found — block the push
+                      else
+                          return 0  # ✅ No secrets — allow the push
+                      end
+                  end
+
                   function display_fzf_files --description="Call fzf and preview file contents using bat."
                       set preview_command "bat --theme=gruvbox-dark --color=always --style=header,grid --line-range :400 {}"
                       fzf --ansi --preview $preview_command
@@ -1285,6 +1309,46 @@
                       #end
                   #end
 
+                  function fuck_purity --description "Inject values from JSON into flake.nix, violating purity with extreme prejudice"
+                      set -l json_file $argv[1]
+                      set -l flake_file $argv[2]
+
+                      if not test -f $json_file
+                          echo "Missing JSON file: $json_file"
+                          return 1
+                      end
+
+                      if not test -f $flake_file
+                          echo "Missing flake.nix file: $flake_file"
+                          return 1
+                      end
+
+                      for key in (jq -r 'keys[]' $json_file)
+                          set value (jq -r --arg k $key '.[$k]' $json_file)
+                  
+                          sed -i "s|\($key *= *\)\"[^\"]*\"|\1\"$value\"|" $flake_file
+                      end
+                  end
+
+                  function unfuck_purity --description "Restore purity by scrubbing values from flake.nix"
+                      set -l json_file $argv[1]
+                      set -l flake_file $argv[2]
+
+                      if not test -f $json_file
+                          echo "Missing JSON file: $json_file"
+                          return 1
+                      end
+
+                      if not test -f $flake_file
+                          echo "Missing flake.nix file: $flake_file"
+                          return 1
+                      end
+
+                      for key in (jq -r 'keys[]' $json_file)
+                          sed -i "s|\($key *= *\)\"[^\"]*\"|\1\"\"|" $flake_file
+                      end
+                  end
+
                   function hash_get --description="Return a hash of the input string."
                       echo -n $argv[1] | sha1sum | cut -d ' ' -f 1
                   end
@@ -1365,6 +1429,56 @@
                           rm -f /tmp/$tmp_file
                       else
                           jsonschema -F "{error.message}" -i $argv[1] $argv[2]
+                      end
+                  end
+
+                  function kind_start
+                      set img_path ~/kubelet.img
+                      set mount_point /mnt/kind-kubelet
+
+                      # Ensure the image exists
+                      if not test -e $img_path
+                          echo "Creating $img_path..."
+                          sudo fallocate -l 80G $img_path
+                          sudo mkfs.ext4 $img_path
+                      end
+
+                      # Ensure the mount point exists and is mounted
+                      if not mount | grep -q $mount_point
+                          echo "Mounting $img_path to $mount_point..."
+                          sudo mkdir -p $mount_point
+                          sudo mount -o loop $img_path $mount_point
+                      end
+
+                      # Check if dev-control-plane container exists
+                      if docker ps -a --format '{{.Names}}' | grep -q '^dev-control-plane$'
+                          echo "Starting existing kind container..."
+                          docker start dev-control-plane
+                      else
+                          echo "Creating new kind cluster..."
+                          kind create cluster
+                      end
+                  end
+
+                  function kind_stop
+                      set mount_point /mnt/kind-kubelet
+
+                      # Check for and stop dev-control-plane if running
+                      if docker ps --format '{{.Names}}' | grep -q '^dev-control-plane$'
+                          echo "Stopping kind container..."
+                          docker stop dev-control-plane
+                      else if docker ps -a --format '{{.Names}}' | grep -q '^dev-control-plane$'
+                          echo "Container is already stopped."
+                      else
+                          echo "kind has not been started (no container found)."
+                      end
+
+                      # Unmount the loop device if it's mounted
+                      if mount | grep -q $mount_point
+                          echo "Unmounting $mount_point..."
+                          sudo umount $mount_point
+                      else
+                          echo "No loopback mount found for kind."
                       end
                   end
 
@@ -1722,6 +1836,44 @@
 
                   function myps --description="ps auww --ppid 2 -p2 --deselect"
                       ps auww --ppid 2 -p2 --deselect
+                  end
+                  
+                  function nixos_commit --description 'Secure commit: scrub secrets, commit if needed, restore, and verify'
+                      set -l json_file /boot/secrets/flakey.json
+                      set -l flake_file /etc/nixos/flake.nix
+                      
+                      echo "[nixos_commit] Mounting boot volume..."
+                      boot_is_mounted; or boot_toggle_mounts
+                      if test $status -ne 0
+                          echo "[nixos_commit] Failed to mount boot. Aborting."
+                          return 1
+                      end
+                      
+                      echo "[nixos_commit] Scrubbing secrets from flake.nix..."
+                      unfuck_purity $json_file $flake_file
+                      
+                      if git -C /etc/nixos diff --quiet --exit-code
+                          echo "[nixos_commit] No changes to commit. Continuing..."
+                      else
+                          echo -n "[nixos_commit] Enter commit message: "
+                          read -l commit_message
+                          if test -z "$commit_message"
+                              echo "[nixos_commit] No commit message entered. Aborting."
+                              return 1
+                          end
+                          
+                          echo "[nixos_commit] Committing clean flake.nix..."
+                          git -C /etc/nixos add flake.nix
+                          git -C /etc/nixos commit -m "$commit_message"
+                      end
+                      
+                      echo "[nixos_commit] Restoring secret values into flake.nix..."
+                      fuck_purity $json_file $flake_file
+                      
+                      echo "[nixos_commit] Unmounting boot volume..."
+                      boot_toggle_mounts
+                      
+                      return 0
                   end
 
                   function nvim_goto_files --description="Open fzf to find a file, then open it in neovim"
@@ -2279,8 +2431,11 @@
                 };
               };
 
+              dbus.enable = true;
+
               desktopManager.cosmic.enable = true;
               displayManager.cosmic-greeter.enable = true;
+
               flatpak.enable = true;
 
               fail2ban = {
@@ -2433,6 +2588,15 @@
               };
             };
 
+            # Prevent all containers from restarting on boot
+            systemd.services.docker = {
+              # Inherit the default behavior first
+              overrideStrategy = "asDropin"; # Makes it a drop-in override
+              serviceConfig = {
+                ExecStartPost = lib.mkAfter ''${pkgs.bash}/bin/bash -c "for n in $(docker ps -aq); do docker update --restart=no $n || true; done;"'';
+              };
+            };
+
             swapDevices = [
               {
                 device = "/dev/nix/swap";
@@ -2531,7 +2695,6 @@ EOF
               ];
             };
 
-services.dbus.enable = true;  # Required for systemd user services
             users.groups.mlocate = {};
 
             virtualisation = {
@@ -2542,10 +2705,9 @@ services.dbus.enable = true;  # Required for systemd user services
               docker = {
                 enable = true;
                 daemon.settings = {
-                    dns = ["192.168.1.1"];
                     iptables = false;
                     ip-forward = true;
-                    #bridge = "none";
+                    live-restore = false;
                 };
               };
             };

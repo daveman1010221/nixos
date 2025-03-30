@@ -1,0 +1,24 @@
+/run/current-system/sw/bin/env bash
+
+remote="$1"
+url="$2"
+
+echo "[pre-push] Remote: $remote"
+echo "[pre-push] URL: $url"
+
+echo "[pre-push] Running nixos_commit..."
+if ! fish -c 'nixos_commit'
+then
+    echo "[pre-push] nixos_commit failed. Aborting push."
+    exit 1
+fi
+
+echo "[pre-push] Scanning flake.nix for remaining secrets..."
+if fish -c 'detect_secrets_leaked /etc/nixos/flake.nix'
+then
+    echo "[pre-push] ❌ Secrets detected in flake.nix. Push blocked."
+    exit 1
+fi
+
+echo "[pre-push] ✅ No secrets detected. Proceeding with push."
+exit 0
