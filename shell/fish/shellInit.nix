@@ -6,6 +6,10 @@
 if not set -q __fish_nixos_shell_config_sourced
     set -g __fish_nixos_shell_config_sourced 1
 
+    if not contains /etc/fish/vendor_functions.d $fish_function_path
+        set --prepend fish_function_path /etc/fish/vendor_functions.d
+    end
+
     # Universal user paths and env vars
 
     # Determine the current user's home, even when elevated via doas/sudo
