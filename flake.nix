@@ -46,15 +46,15 @@
 
     # Load the secrets if the file exists, else use empty strings.
     secrets = {
-      PLACEHOLDER_NVME0 = "/dev/disk/by-id/nvme-eui.ace42e00310a1b382ee4ac0000000001";
-      PLACEHOLDER_NVME1 = "/dev/disk/by-id/nvme-eui.ace42e00310a1b372ee4ac0000000001";
-      PLACEHOLDER_BOOT_UUID = "/dev/disk/by-uuid/fd2eb4f6-6320-4e8c-b95d-59b38a37ebb7";
-      PLACEHOLDER_BOOT_FS_UUID = "/dev/disk/by-uuid/51cdc1cc-bcc7-4be8-95e3-b1ede8bef66c";
-      PLACEHOLDER_EFI_FS_UUID = "/dev/disk/by-uuid/93FA-31E7";
-      PLACEHOLDER_ROOT = "/dev/disk/by-uuid/bd552f84-1dfe-4a99-9167-1d17c83ce77a";
-      PLACEHOLDER_VAR = "/dev/disk/by-uuid/de0a6b69-acbb-4bba-b2ff-ab46c08310a4";
-      PLACEHOLDER_TMP = "/dev/disk/by-uuid/e852da06-c243-47a4-b915-06d5e464964a";
-      PLACEHOLDER_HOME = "/dev/disk/by-uuid/43a2c8d1-fa49-474d-85dc-4dee2986b8e5";
+      PLACEHOLDER_NVME0 = "";
+      PLACEHOLDER_NVME1 = "";
+      PLACEHOLDER_BOOT_UUID = "";
+      PLACEHOLDER_BOOT_FS_UUID = "";
+      PLACEHOLDER_EFI_FS_UUID = "";
+      PLACEHOLDER_ROOT = "";
+      PLACEHOLDER_VAR = "";
+      PLACEHOLDER_TMP = "";
+      PLACEHOLDER_HOME = "";
       PLACEHOLDER_HOSTNAME = "precisionws";
     };
   in {
