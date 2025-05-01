@@ -12,7 +12,6 @@ function fish_greeting --description="Displays the Fish logo and some other init
         set my_cow $cows[$random_cow]; \
         echo -n $my_cow | 
             cut -d '.' -f 1) -W 79 | \
-            lolcat --force | \
-            cat
+            lolcat
 end
 ''

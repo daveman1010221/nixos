@@ -46,15 +46,16 @@
 
     # Load the secrets if the file exists, else use empty strings.
     secrets = {
-      PLACEHOLDER_NVME0 = "";
-      PLACEHOLDER_NVME1 = "";
-      PLACEHOLDER_BOOT_UUID = "";
-      PLACEHOLDER_BOOT_FS_UUID = "";
-      PLACEHOLDER_EFI_FS_UUID = "";
-      PLACEHOLDER_ROOT = "";
-      PLACEHOLDER_VAR = "";
-      PLACEHOLDER_TMP = "";
-      PLACEHOLDER_HOME = "";
+      PLACEHOLDER_NVME0 = "/dev/disk/by-id/nvme-eui.ace42e00310a1b382ee4ac0000000001";
+      PLACEHOLDER_NVME1 = "/dev/disk/by-id/nvme-eui.ace42e00310a1b372ee4ac0000000001";
+      PLACEHOLDER_BOOT_UUID = "/dev/disk/by-uuid/fd2eb4f6-6320-4e8c-b95d-59b38a37ebb7";
+      PLACEHOLDER_BOOT_FS_UUID = "/dev/disk/by-uuid/51cdc1cc-bcc7-4be8-95e3-b1ede8bef66c";
+      PLACEHOLDER_EFI_FS_UUID = "/dev/disk/by-uuid/93FA-31E7";
+      PLACEHOLDER_ROOT = "/dev/disk/by-uuid/bd552f84-1dfe-4a99-9167-1d17c83ce77a";
+      PLACEHOLDER_VAR = "/dev/disk/by-uuid/de0a6b69-acbb-4bba-b2ff-ab46c08310a4";
+      PLACEHOLDER_TMP = "/dev/disk/by-uuid/e852da06-c243-47a4-b915-06d5e464964a";
+      PLACEHOLDER_HOME = "/dev/disk/by-uuid/43a2c8d1-fa49-474d-85dc-4dee2986b8e5";
+      GIT_SMTP_PASS = "mlucmulyvpqlfprb";   # <-- hash
       PLACEHOLDER_HOSTNAME = "precisionws";
     };
   in {
@@ -134,9 +135,6 @@
                 #     ];
                 #   });
                 # })
-
-                # This override was created to fix a problem with bottles, which now works without this.
-                # (self: super: {
 
                 # This override was created to fix a problem with bottles, which now works without this.
                 # (self: super: {
@@ -595,7 +593,31 @@
 
               # System-wide package list
               systemPackages = with pkgs; [
-                rust-bin.stable.latest.default
+
+                (rust-bin.stable.latest.default.override {
+                  targets = [ "wasm32-unknown-unknown" ];
+                })
+
+                # Tauri dev
+                cargo-generate
+                cargo-tauri
+                cargo-leptos
+                nodejs
+                gobject-introspection
+                at-spi2-atk
+                atkmm
+                cairo
+                gdk-pixbuf
+                glib
+                gtk3
+                harfbuzz
+                librsvg
+                libsoup_3
+                pango
+                webkitgtk_4_1
+                tailwindcss
+                esbuild
+
                 nvim-pkg
                 #audit
                 atuin
@@ -657,7 +679,7 @@
                 fwupd-efi
                 fzf
                 gitFull
-                git-up
+                # git-up    <-- Broken
                 glmark2
                 furmark
                 glxinfo
@@ -687,7 +709,7 @@
                 libreoffice-fresh
                 llvmPackages_19.clangUseLLVM
                 clang_19
-                lolcat
+                dotacat
                 lshw
                 lsof
                 lvm2 # Provides LVM tools: pvcreate, vgcreate, lvcreate
@@ -720,8 +742,7 @@
                 podman
                 podman-compose
                 podman-desktop
-                protonvpn-gui
-                protonvpn-cli_2
+                expressvpn
                 psmisc
                 pwgen
                 pyenv
@@ -759,6 +780,7 @@
                 viu
                 vkmark
                 vulkan-tools
+                vulnix
                 wasm-pack
                 wasmtime
                 wordbook
@@ -919,170 +941,7 @@
               nftables.checkRuleset = true;
               nftables.enable = true;
               nftables.flushRuleset = true;
-              nftables.ruleset = ''
-                table ip mytable {
-                    set inbound_whitelist {
-                        type inet_service
-                        elements = { 22, 8080, 4173 }
-                    }
-
-                    set vpn_ports {
-                        type inet_service
-                        elements = { 80, 88, 443, 500, 1194, 1224, 4500, 4569, 5060, 7770, 8443, 51820 }
-                    }
-
-                    chain input {
-                        type filter hook input priority filter; policy drop;
-                        ct state established,related accept
-                        iif "lo" accept
-                        tcp dport @inbound_whitelist ct state new accept
-
-                        # Allow access to Kubernetes API server (default port 6443)
-                        tcp dport 6443 accept
-
-                        # (Optional) Allow CoreDNS (UDP/TCP on 53) from cluster-internal IPs
-                        ip saddr 10.244.0.0/16 udp dport 53 accept
-                        ip saddr 10.244.0.0/16 tcp dport 53 accept
-
-                        # Allow traffic to K8s API server on default service IP
-                        ip saddr 10.244.0.0/16 tcp dport 443 ip daddr 10.96.0.1 accept
-
-                        # (Optional) Allow kubelet metrics server or health checks (typically 10250, 10255)
-                        tcp dport { 10250, 10255 } accept
-
-                        jump sig_filter_input
-                        iifname "wlp0s20f3" ip saddr { 10.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12 } accept
-                        ip protocol icmp limit rate 10/second burst 20 packets accept
-                        log prefix "INPUT-DROP: " level debug flags all counter packets 0 bytes 0 drop
-                    }
-
-                    chain output {
-                        type filter hook output priority filter; policy drop;
-                        ct state established,related accept
-                        udp dport { 53, 67, 68, 123, 5353 } accept
-                        udp dport @vpn_ports accept
-                        tcp dport @vpn_ports accept
-                        tcp dport { 7770, 8443 } accept
-                        tcp dport 8080 accept # Allow outbound traffic on port 8080
-                        tcp dport 4173 accept # Allow outbound traffic on port 4173
-                        # Allow DNS resolution
-
-                        # Allow outgoing connections to remote registries and webhooks
-                        tcp dport { 80, 443 } accept
-
-                        # Allow API server access from tools running locally
-                        ip daddr 127.0.0.1 tcp dport 6443 accept
-
-                        # Allow kubelet and other cluster components to talk internally
-                        ip daddr 172.18.0.0/16 accept
-
-                        oifname "lo" accept
-                        oifname "wlp0s20f3" ip daddr { 10.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12 } accept
-                        oifname "tun0" accept
-                        ip protocol icmp limit rate 10/second burst 20 packets accept
-                        log prefix "OUTPUT-DROP: " level debug flags all counter packets 12 bytes 738 drop
-                    }
-
-                    chain forward {
-                        type filter hook forward priority filter; policy drop;
-                        ct state established,related accept
-
-                        # KIND/Docker rules
-                        jump docker_user
-                        jump docker_isolation_stage_1
-                        oifname "docker0" ct state related,established accept
-                        oifname "docker0" jump docker
-                        iifname "docker0" oifname != "docker0" accept
-                        iifname "docker0" oifname "docker0" accept
-
-                        # Allow pod subnet to talk to control plane
-                        ip saddr 10.244.0.0/16 ip daddr 172.18.0.0/16 accept
-                        # Allow pod subnet to talk to Kubernetes services (e.g., 10.96.0.1:443)
-                        ip saddr 10.244.0.0/16 ip daddr 10.96.0.0/12 accept
-
-                        # This rule clears up some noisy kernel messages when
-                        # coredns attempts to find the outbound dns server.
-                        # This is not the ideal solution, coredns probably
-                        # should do its own external resolves. TODO
-                        ip saddr 172.18.0.0/16 ip daddr 192.168.1.1 udp dport 53 accept
-
-                        tcp dport @inbound_whitelist iifname "docker0" oifname != "docker0" accept
-                        tcp dport @inbound_whitelist iifname != "docker0" oifname "docker0" accept
-
-                        # Allow bridged traffic
-                        iifname "br0" oifname "br0" accept
-                        ip protocol icmp limit rate 10/second burst 20 packets accept
-                        ether type arp drop
-                        ip daddr { 224.0.0.0/4, 255.255.255.255 } drop
-                        log prefix "FORWARD-DROP: " level debug flags all counter packets 0 bytes 0 drop
-                    }
-
-                    chain prerouting {
-                        type nat hook prerouting priority dstnat; policy accept;
-                    }
-
-                    chain postrouting {
-                        type nat hook postrouting priority srcnat; policy accept;
-                        ip saddr 172.0.0.0/8 oifname != "docker0" masquerade
-                        oifname "tun0" masquerade
-                    }
-
-                    chain sig_filter_input {
-                        icmp type echo-request ip length > 1028 log prefix "Large ICMP Echo Request: " counter packets 0 bytes 0
-                        icmp type echo-request ip length > 1028 drop
-                        icmp type echo-reply ip length > 1028 log prefix "Large ICMP Echo Reply: " counter packets 0 bytes 0
-                        icmp type echo-reply ip length > 1028 drop
-                        icmp type destination-unreachable icmp code admin-prohibited log prefix "Admin Prohibited ICMP: " counter packets 0 bytes 0
-                        icmp type destination-unreachable icmp code admin-prohibited drop
-                        icmp type redirect log prefix "ICMP Redirect: " counter packets 0 bytes 0
-                        icmp type redirect drop
-                        icmp type time-exceeded icmp code net-unreachable log prefix "TTL Expired ICMP: " counter packets 0 bytes 0
-                        icmp type time-exceeded icmp code net-unreachable drop
-                        icmp type parameter-problem log prefix "ICMP Parameter Problem: " counter packets 0 bytes 0
-                        icmp type parameter-problem drop
-                        icmp type address-mask-request log prefix "ICMP Address Mask Request: " counter packets 0 bytes 0
-                        icmp type address-mask-request drop
-                        icmp type timestamp-request log prefix "ICMP Timestamp Request: " counter packets 0 bytes 0
-                        icmp type timestamp-request drop
-                        icmp type timestamp-reply log prefix "ICMP Timestamp Reply: " counter packets 0 bytes 0
-                        icmp type timestamp-reply drop
-                        icmp type 0-255 icmp code > 15 log prefix "Malformed ICMP Packet: " counter packets 0 bytes 0
-                        icmp type 0-255 icmp code > 15 drop
-                    }
-
-                    chain docker {
-                      iifname != "docker0" oifname "docker0" ip daddr 172.18.0.2 tcp dport 6443 accept
-                    }
-
-                    chain docker_user {
-                      # Placeholder for user-defined rules (was a RETURN in iptables)
-                    }
-
-                    chain docker_isolation_stage_1 {
-                      iifname "docker0" oifname != "docker0" jump docker_isolation_stage_2
-                    }
-
-                    chain docker_isolation_stage_2 {
-                      oifname "docker0" drop
-                    }
-                }
-                table ip6 filter {
-                    chain input {
-                        type filter hook input priority filter; policy drop;
-                        ip6 daddr ::/0 drop
-                    }
-
-                    chain output {
-                        type filter hook output priority filter; policy drop;
-                        ip6 saddr ::/0 drop
-                    }
-
-                    chain forward {
-                        type filter hook forward priority filter; policy drop;
-                        ip6 daddr ::/0 drop
-                    }
-                }
-              '';
+              nftables.ruleset = builtins.readFile ./firewall/nftables.nft;
               useDHCP = lib.mkDefault true;
             };
 
@@ -1267,6 +1126,8 @@
               desktopManager.cosmic.enable = true;
               displayManager.cosmic-greeter.enable = true;
 
+              expressvpn.enable = true;
+
               flatpak.enable = true;
 
               fail2ban = {
@@ -1435,71 +1296,23 @@
               }
             ];
 
-            system.activationScripts.userGitConfig = let
-              userGitConfigs = [
-                { user = "djshepard"; name = "David Shepard"; email = "daveman1010220@gmail.com"; }
-                # Add additional users as needed
-              ];
-              createGitConfigScript = userConfig: ''
-                # Check if .gitconfig exists for user ${userConfig.user}
-                if [ ! -f /home/${userConfig.user}/.gitconfig ]; then
-                  echo "Creating .gitconfig for ${userConfig.user}"
-                  cat > /home/${userConfig.user}/.gitconfig <<EOF
-                  [user]
-                      email = daveman1010220@gmail.com
-                      name = David Shepard
-                  [sendemail]
-                      smtpencryption = tls
-                      smtpserverport = 587
-                      smtpuser = daveman1010220@gmail.com
-                      smtpserver = smtp.googlemail.com
-                          smtpPass = mlucmulyvpqlfprb
-                  [pull]
-                      rebase = false
-                  [http]
-                      sslCAPath = /etc/ssl/certs/ca-certificates.crt
-                      sslVerify = true
-                      sslCAFile = /etc/ssl/certs/ca-certificates.crt
-                      sslCAInfo = /etc/ssl/certs/ca-certificates.crt
-                  [init]
-                      defaultBranch = main
-                  [core]
-                      pager = delta
-                      autocrlf = false
-
-                  [interactive]
-                      diffFilter = delta --color-only
-
-                  [delta]
-                      navigate = true    # use n and N to move between diff sections
-                      light = false      # set to true if you're in a terminal w/ a light background color (e.g. the default macOS terminal)
-                      side-by-side = true
-                      line-numbers = true
-                      theme = gruvbox-dark
-
-                  [merge]
-                      conflictstyle = diff3
-
-                  [diff]
-                      colorMoved = default
-                  [filter "lfs"]
-                      clean = git-lfs clean -- %f
-                      smudge = git-lfs smudge -- %f
-                      process = git-lfs filter-process
-                      required = true
-EOF
-
-                  # Ensure the file ownership is correct
-                  chown ${userConfig.user} /home/${userConfig.user}/.gitconfig
-                  echo "********* Remember to create your ~/.git-credentials file with your token *********"
-                else
-                  echo ".gitconfig already exists for ${userConfig.user}, skipping..."
-                fi
-              '';
-            in {
-              text = lib.concatMapStringsSep "\n" createGitConfigScript userGitConfigs;
-              deps = [ ];
-            };
+            # system.activationScripts.userGitConfig = let
+            #   userGitConfigs = [
+            #     {
+            #         user = "djshepard";
+            #         name = "David Shepard";
+            #         email = "daveman1010220@gmail.com";
+            #         smtpPass = secrets.GIT_SMTP_PASS;
+            #     }
+            #   ];
+            #   createGitConfigScript = userCfg:
+            #     import ./activation_scripts/git_config.nix {
+            #       inherit (userCfg) user name email smtpPass;
+            #     };
+            # in {
+            #   text = lib.concatMapStringsSep "\n" createGitConfigScript userGitConfigs;
+            #   deps = [ ];
+            # };
 
             # Set timezone to US Eastern Standard Time
             time.timeZone = "America/New_York";
