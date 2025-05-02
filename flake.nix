@@ -5,7 +5,7 @@
     nixos-cosmic.url = "github:lilyinstarlight/nixos-cosmic";
 
     rust-overlay = {
-      url = "github:oxalica/rust-overlay?rev=f03085549609e49c7bcbbee86a1949057d087199";
+      url = "github:oxalica/rust-overlay";
       inputs = {
         nixpkgs.follows = "nixos-cosmic/nixpkgs";
       };
@@ -18,9 +18,13 @@
         flake-utils.url = "github:numtide/flake-utils";
       };
     };
+
+    dotacatFast = {
+        url = "github:daveman1010221/dotacat-fast";
+    };
   };
 
-  outputs = { self, nixpkgs, nixos-cosmic, rust-overlay, myNeovimOverlay }:
+  outputs = { self, nixpkgs, nixos-cosmic, rust-overlay, myNeovimOverlay, dotacatFast }:
   let
     system = "x86_64-linux";
 
@@ -594,8 +598,9 @@
               # System-wide package list
               systemPackages = with pkgs; [
 
-                (rust-bin.stable.latest.default.override {
+                (rust-bin.nightly.latest.default.override {
                   targets = [ "wasm32-unknown-unknown" ];
+                  extensions = [ "rust-src" "rust-analyzer" ];
                 })
 
                 # Tauri dev
@@ -709,13 +714,13 @@
                 libreoffice-fresh
                 llvmPackages_19.clangUseLLVM
                 clang_19
-                dotacat
+                dotacatFast.packages.${system}.default
                 lshw
                 lsof
                 lvm2 # Provides LVM tools: pvcreate, vgcreate, lvcreate
                 mdadm # RAID management
                 mdcat
-                microsoft-edge
+                #microsoft-edge
                 plocate
                 cowsay
                 neofetch

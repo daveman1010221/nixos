@@ -1,3 +1,3 @@
-function lol_fig --description="lolcat inside a figlet"
-    echo $argv | figlet | lolcat -f | cat
+function lol_fig --description="lolcat (dotacat) inside a figlet"
+    echo $argv | figlet | dotacat
 end
