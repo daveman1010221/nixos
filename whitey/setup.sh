@@ -62,7 +62,12 @@ BOOT_MOUNT="/mnt/boot"
 SECRETS_MOUNT="/mnt/secrets"
 EFI_PARTITION="${DEFAULT_BOOT}1"
 BOOT_PARTITION="${DEFAULT_BOOT}2"
-SECRETS_PARTITION=""
+SECRETS_PARTITION="${DEFAULT_BOOT}3"
+DATA_PARTITION="${DEFAULT_BOOT}4"
+
+# keys will live on the encrypted /secrets partition
+KEYS_DIR="${SECRETS_MOUNT}/keys"
+
 NIXOS_REPO="https://github.com/daveman1010221/nixos.git"
 
 ### PRE-FLIGHT CHECKS
@@ -151,9 +156,19 @@ partprobe "${DEFAULT_BOOT}" || echo "Reboot may be required."
 ### PARTITIONING ###
 echo -e "\033[1;34m[INFO]\033[0m Partitioning ${DEFAULT_BOOT}..."
 parted -s ${DEFAULT_BOOT} mklabel gpt
-parted -s ${DEFAULT_BOOT} mkpart ESP fat32 1MiB 551MiB
-parted -s ${DEFAULT_BOOT} set 1 esp on
-parted -s ${DEFAULT_BOOT} mkpart BOOT ext4 551MiB 2599MiB
+
+# 1  ESP    512 MiB
+parted -s ${DEFAULT_BOOT} mkpart ESP fat32     1MiB  551MiB
+parted -s ${DEFAULT_BOOT} set   1 esp on
+
+# 2  /boot  2 GiB
+parted -s ${DEFAULT_BOOT} mkpart BOOT ext4    551MiB 2599MiB
+
+# 3  /secrets 256 MiB (will be LUKS2 → ext4)
+parted -s ${DEFAULT_BOOT} mkpart SECRETS ext4 2599MiB 2855MiB
+
+# 4  /data  remainder of the stick
+parted -s ${DEFAULT_BOOT} mkpart DATA ext4    2855MiB 100%
 
 ### FORMATTING EFI ###
 echo -e "\033[1;34m[INFO]\033[0m Formatting EFI partition..."
@@ -166,6 +181,19 @@ mkdir -p ${BOOT_MOUNT}
 mount ${BOOT_PARTITION} ${BOOT_MOUNT}
 mkdir -p ${BOOT_MOUNT}/EFI
 mount ${EFI_PARTITION} ${BOOT_MOUNT}/EFI
+
+# create & unlock the **LUKS2 /secrets** slice
+echo -e "\033[1;34m[INFO]\033[0m Creating encrypted /secrets partition (you’ll be prompted once)..."
+cryptsetup luksFormat --type luks2 --cipher aes-xts-plain64 --key-size 512 --hash sha256 ${SECRETS_PARTITION}
+cryptsetup luksOpen ${SECRETS_PARTITION} secrets_crypt
+mkfs.ext4  /dev/mapper/secrets_crypt
+mkdir -p   ${SECRETS_MOUNT}
+mount      /dev/mapper/secrets_crypt ${SECRETS_MOUNT}
+
+# This is the hardware encryption key. This can be multiple keys. Keeping it simple for now.
+mkdir -p ${KEYS_DIR}
+openssl rand -out ${KEYS_DIR}/nvme.key 64
+chmod 400 ${KEYS_DIR}/nvme.key
 
 ### CREATING RAID-0 ###
 if [ -e /dev/md0 ]; then
@@ -216,6 +244,8 @@ swapon /dev/nix/swap
 echo -e "\033[1;34m[INFO]\033[0m Unmounting Boot and EFI..."
 umount ${BOOT_MOUNT}/EFI || true
 umount ${BOOT_MOUNT} || true
+umount ${SECRETS_MOUNT}  || true
+cryptsetup luksClose secrets_crypt || true
 
 # 7️⃣  Mount Logical Volumes
 echo -e "\033[1;34m[INFO]\033[0m Mounting Logical Volumes..."
@@ -228,6 +258,11 @@ mkdir -p /mnt/home && mount /dev/nix/home /mnt/home
 echo -e "\033[1;34m[INFO]\033[0m Remounting Boot and EFI..."
 mkdir -p ${BOOT_MOUNT} && mount ${BOOT_PARTITION} ${BOOT_MOUNT}
 mkdir -p ${BOOT_MOUNT}/EFI && mount ${EFI_PARTITION} ${BOOT_MOUNT}/EFI
+
+# remount secrets for the copy-to-nixos step
+mkdir -p ${SECRETS_MOUNT}
+cryptsetup luksOpen ${SECRETS_PARTITION} secrets_crypt
+mount /dev/mapper/secrets_crypt ${SECRETS_MOUNT}
 
 echo -e "\033[1;34m[INFO]\033[0m Verifying that all devices and filesystems are correctly set up..."
 
@@ -321,6 +356,9 @@ var_fs_uuid=$(findmnt -no UUID /mnt/var)
 tmp_fs_uuid=$(findmnt -no UUID /mnt/tmp)
 home_fs_uuid=$(findmnt -no UUID /mnt/home)
 
+# UUID of the *unencrypted* mapper device
+secrets_fs_uuid=$(blkid -s UUID -o value /dev/mapper/secrets_crypt)
+
 # Get persistent device paths
 nvme0_path=$(ls -l /dev/disk/by-id/ | awk '/nvme-eui.*nvme0n1/ {print "/dev/disk/by-id/" $9}' | head -n1)
 nvme1_path=$(ls -l /dev/disk/by-id/ | awk '/nvme-eui.*nvme1n1/ {print "/dev/disk/by-id/" $9}' | head -n1)
@@ -339,6 +377,7 @@ MISSING_VALUES=0
 check_value "$boot_uuid" "Boot UUID"
 check_value "$boot_fs_uuid" "Boot Filesystem UUID"
 check_value "$efi_fs_uuid" "EFI Filesystem UUID"
+check_value "$secrets_fs_uuid"  "Secrets Filesystem UUID"
 
 if [[ $MISSING_VALUES -gt 0 ]]; then
     echo -e "\033[1;31m[ERROR]\033[0m Some expected values were not found in hardware-configuration.nix!"
@@ -360,6 +399,7 @@ cat <<EOF > /mnt/etc/nixos/secrets.nix
   PLACEHOLDER_VAR = "/dev/disk/by-uuid/${var_fs_uuid}";
   PLACEHOLDER_TMP = "/dev/disk/by-uuid/${tmp_fs_uuid}";
   PLACEHOLDER_HOME = "/dev/disk/by-uuid/${home_fs_uuid}";
+  PLACEHOLDER_SECRETS  = "/dev/disk/by-uuid/${secrets_fs_uuid}";
   PLACEHOLDER_HOSTNAME = "${HOSTNAME}";
 }
 EOF
