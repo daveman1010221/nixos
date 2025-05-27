@@ -558,6 +558,16 @@
             #   deps = [ ];
             # };
 
+            system.activationScripts.cacheBootInfo.text = ''
+              mkdir -m 0755 -p /etc/nixos/cache
+              cat > /etc/nixos/cache/boot.json <<'EOF'
+              {
+                "boot_device": "${config.boot.device}",
+                "efi_device":  "${config.efi.device}"
+              }
+              EOF
+            '';
+
             # Set timezone to US Eastern Standard Time
             time.timeZone = "America/New_York";
 

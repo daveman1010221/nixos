@@ -1,73 +1,77 @@
 { hostname, ... }:
 
 ''
-function mount_boot --description 'Mount the encrypted /boot and /boot/EFI partitions using Nix expressions'
-    pushd /etc/nixos
-    # Extract encrypted device path using Nix expressions
-    set encrypted_device (nix eval --raw '.#nixosConfigurations.${hostname}.config.boot.initrd.luks.devices."boot_crypt".device' 2>/dev/null)
-    if test -z "$encrypted_device"
-        echo "Could not retrieve encrypted device path from NixOS configuration."
-        return 1
-    end
+##
+# mount_boot ────────────────────────────────────────────────────────────
+# Convenience wrapper for interactive / script use.
+#
+# • Works when the secrets-USB is *still locked* thanks to the tiny
+#   cache written at activation time:  /etc/nixos/cache/boot.json
+#   ─────────────────────────────────────────────────────────────────
+#     {
+#       "boot_device": "/dev/disk/by-uuid/…",   # ext4 inside LUKS
+#       "efi_device":  "/dev/disk/by-uuid/…"    # FAT ESP
+#     }
+# • Falls back to `nix eval` if the cache is missing (e.g. first
+#   generation after rebuild, rescue shell, etc.).
+# • Opens the LUKS container if necessary, mounts /boot and /boot/EFI.
+##
+function mount_boot --description \
+        'Mount encrypted /boot and ESP; understands cached boot.json'
+    pushd /etc/nixos >/dev/null
 
-    # Resolve physical device if the device path is a symlink
-    set encrypted_device_physical (readlink -f "$encrypted_device")
-    if test -z "$encrypted_device_physical"
-        echo "Could not resolve physical encrypted device path."
-        return 1
-    end
+    # ── 1. discover devices ────────────────────────────────────────────
+    set cache_file /etc/nixos/cache/boot.json
 
-    # Check if boot_crypt is already open
-    if test -e /dev/mapper/boot_crypt
-        echo "Encrypted boot device is already open. Skipping luksOpen..."
+    if test -f $cache_file
+        set boot_device (jq -r '.boot_device' $cache_file)
+        set efi_device  (jq -r '.efi_device'  $cache_file)
     else
-        echo "Opening encrypted boot partition..."
-        sudo cryptsetup luksOpen "$encrypted_device_physical" boot_crypt
-        if test $status -ne 0
-            echo "Failed to open encrypted boot partition."
-            return 1
-        end
+        # Fallback to eval-time lookup (slower, but always works)
+        set boot_device (nix eval --raw \
+            ".#nixosConfigurations.${hostname}.config.boot.device" 2>/dev/null)
+        set efi_device  (nix eval --raw \
+            ".#nixosConfigurations.${hostname}.config.efi.device" 2>/dev/null)
     end
 
-    # Mount /boot if not already mounted
-    if mountpoint -q /boot
-        echo "/boot is already mounted. Skipping mount..."
-    else
-        echo "Mounting /boot..."
-        sudo mount /dev/mapper/boot_crypt /boot
-        if test $status -ne 0
-            echo "Failed to mount /boot."
-            return 1
-        end
-    end
+    # UUID /dev-by-id entries may be symlinks – dereference them
+    set boot_device (readlink -f "$boot_device")
+    set efi_device  (readlink -f "$efi_device")
 
-    # Extract device path for /boot/EFI using Nix expressions
-    set efi_device (nix eval --raw '.#nixosConfigurations.${hostname}.config.fileSystems."/boot/EFI".device' 2>/dev/null)
-    if test -z "$efi_device"
-        echo "Could not retrieve /boot/EFI device path from NixOS configuration."
+    # Encrypted container path (still lives in Nix config, never secret)
+    set luks_dev (nix eval --raw \
+        ".#nixosConfigurations.${hostname}.config.boot.initrd.luks.devices.\"boot_crypt\".device" 2>/dev/null)
+    set luks_dev (readlink -f "$luks_dev")
+
+    if test -z "$luks_dev"
+        echo "❌  Cannot find boot_crypt device path."
+        popd >/dev/null
         return 1
     end
 
-    # Resolve physical device if the device path is a symlink
-    set efi_device_physical (readlink -f "$efi_device")
-    if test -z "$efi_device_physical"
-        echo "Could not resolve physical /boot/EFI device path."
-        return 1
+    # ── 2. open LUKS if needed ────────────────────────────────────────
+    if not test -e /dev/mapper/boot_crypt
+        echo "🔐  Opening LUKS container for /boot..."
+        sudo cryptsetup luksOpen "$luks_dev" boot_crypt; or return 1
     end
 
-    # Mount /boot/EFI if not already mounted
-    if mountpoint -q /boot/EFI
-        echo "/boot/EFI is already mounted. Skipping mount..."
+    # ── 3. mount /boot  ───────────────────────────────────────────────
+    if not mountpoint -q /boot
+        echo "📂  Mounting /boot..."
+        sudo mount /dev/mapper/boot_crypt /boot; or return 1
     else
-        echo "Mounting /boot/EFI..."
-        sudo mount "$efi_device_physical" /boot/EFI
-        if test $status -ne 0
-            echo "Failed to mount /boot/EFI."
-            return 1
-        end
+        echo "ℹ️   /boot already mounted."
     end
 
-    echo "Boot partitions have been mounted successfully."
-    popd
+    # ── 4. mount ESP  ────────────────────────────────────────────────
+    if not mountpoint -q /boot/EFI
+        echo "📂  Mounting /boot/EFI..."
+        sudo mount "$efi_device" /boot/EFI; or return 1
+    else
+        echo "ℹ️   /boot/EFI already mounted."
+    end
+
+    echo "✅  Boot partitions mounted."
+    popd >/dev/null
 end
 ''
