@@ -9,9 +9,6 @@ function nixos_commit --description 'Secure commit: scrub secrets, commit if nee
         return 1
     end
 
-    echo "[nixos_commit] Scrubbing secrets from flake.nix..."
-    unfuck_purity $json_file $flake_file
-
     if git -C /etc/nixos diff --quiet --exit-code
         echo "[nixos_commit] No changes to commit. Continuing..."
     else
@@ -20,7 +17,6 @@ function nixos_commit --description 'Secure commit: scrub secrets, commit if nee
             read -l commit_message
             if test -z "$commit_message"
                 echo "[nixos_commit] No commit message entered. Aborting."
-                fuck_purity $json_file $flake_file
                 return 1
             end
         else
@@ -32,9 +28,6 @@ function nixos_commit --description 'Secure commit: scrub secrets, commit if nee
         git -C /etc/nixos add flake.nix
         git -C /etc/nixos commit -m "$commit_message"
     end
-
-    echo "[nixos_commit] Restoring secret values into flake.nix..."
-    fuck_purity $json_file $flake_file
 
     echo "[nixos_commit] Unmounting boot volume..."
     boot_toggle_mounts
