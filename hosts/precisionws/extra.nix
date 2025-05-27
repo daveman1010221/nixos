@@ -6,6 +6,7 @@
     ./boot/loader.nix
     ./boot/block.nix
     ./boot/filesystems.nix
+    ./boot/encrypted_boot.nix
     ./hardware.nix
     ./services/xserver.nix
     ./systemd-services/lockBoot.nix

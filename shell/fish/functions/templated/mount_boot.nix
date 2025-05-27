@@ -29,9 +29,9 @@ function mount_boot --description \
     else
         # Fallback to eval-time lookup (slower, but always works)
         set boot_device (nix eval --raw \
-            ".#nixosConfigurations.${hostname}.config.boot.device" 2>/dev/null)
+            ".#nixosConfigurations.${hostname}.config.my.boot.device" 2>/dev/null)
         set efi_device  (nix eval --raw \
-            ".#nixosConfigurations.${hostname}.config.efi.device" 2>/dev/null)
+            ".#nixosConfigurations.${hostname}.config.my.boot.efiDevice" 2>/dev/null)
     end
 
     # UUID /dev-by-id entries may be symlinks – dereference them

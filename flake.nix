@@ -85,6 +85,7 @@
 
     # common modules for every machine
     commonModules = [
+      flakes/modules/boot-options.nix
       nixos-cosmic.nixosModules.default
       # ./flakes/modules/base-desktop.nix   ← if/when you split the giant block
     ];
@@ -128,10 +129,7 @@
         };
 
         # read whatever the caller provided under the name `secrets-empty`
-        baseSecrets = builtins.fromJSON (builtins.readFile secrets-empty);
-
-        # merge in the host-specific key
-        secrets = baseSecrets // { HOSTNAME = hostName; };
+        secrets = builtins.fromJSON (builtins.readFile secrets-empty);
 
       in nixpkgs.lib.nixosSystem
       {
@@ -175,7 +173,7 @@
                   (builtins.readDir ./shell/fish/functions/templated));
 
             cowsayPath = pkgs.cowsay;
-            hostname = secrets.PLACEHOLDER_HOSTNAME;
+            hostname = hostName;
             manpackage = pkgs.man;
             fisheyGrc = pkgs.fishPlugins.grc;
             bass = pkgs.fishPlugins.bass;
@@ -260,7 +258,7 @@
             };
 
             networking = {
-              hostName = secrets.PLACEHOLDER_HOSTNAME;
+              hostName = hostName;
               firewall.enable = false;
               networkmanager.enable = true;
 
@@ -557,16 +555,6 @@
             #   text = lib.concatMapStringsSep "\n" createGitConfigScript userGitConfigs;
             #   deps = [ ];
             # };
-
-            system.activationScripts.cacheBootInfo.text = ''
-              mkdir -m 0755 -p /etc/nixos/cache
-              cat > /etc/nixos/cache/boot.json <<'EOF'
-              {
-                "boot_device": "${config.boot.device}",
-                "efi_device":  "${config.efi.device}"
-              }
-              EOF
-            '';
 
             # Set timezone to US Eastern Standard Time
             time.timeZone = "America/New_York";
