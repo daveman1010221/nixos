@@ -1,4 +1,4 @@
-{ lib, hostPkgs, secrets, ... }:
+{ config, lib, hostPkgs, secrets, ... }:
 
 {
   # Boot configuration
@@ -95,7 +95,7 @@
         devices = {
           boot_crypt = {
             # sdb2 UUID (pre-luksOpen)
-            device = secrets.PLACEHOLDER_BOOT_UUID;
+            device = config.my.boot.device;
             preLVM = true;
             allowDiscards = true;
             # Custom mount commands for the unencrypted /boot, included in the initrd

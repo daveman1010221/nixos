@@ -5,3 +5,4 @@ shell.nix.save
 secrets.nix
 hardware-configuration.nix
 .nvimlog
+result
