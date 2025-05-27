@@ -62,8 +62,8 @@
     # Step 1: Dynamically import MOK certs into the Nix store
     certsDerivation = pkgs.runCommand "certs" {} ''
       mkdir -p $out
-      cp ${./MOK.pem} $out/MOK.pem
-      cp ${./MOK.priv} $out/MOK.priv
+      cp ${./kernel/MOK.pem} $out/MOK.pem
+      cp ${./kernel/MOK.priv} $out/MOK.priv
     '';
 
     # Step 2: Read the certs from the store after the derivation runs
@@ -74,7 +74,7 @@
     myPubCert = builtins.toFile "MOK.pem" mokPem;
     myPrivKey = builtins.toFile "MOK.priv" mokPriv;
 
-    myConfig = builtins.toFile ".config" (builtins.readFile (builtins.toString ./.config));
+    myConfig = builtins.toFile ".config" (builtins.readFile (builtins.toString ./kernel/.config));
 
     # list of host folders
     hostNames = builtins.attrNames (
@@ -86,6 +86,7 @@
     # common modules for every machine
     commonModules = [
       flakes/modules/boot-options.nix
+      flakes/modules/initrd-base.nix
       nixos-cosmic.nixosModules.default
       # ./flakes/modules/base-desktop.nix   ← if/when you split the giant block
     ];

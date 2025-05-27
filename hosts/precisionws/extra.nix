@@ -2,7 +2,7 @@
 {
   imports = [
     ./boot/kernel.nix
-    ./boot/initrd.nix
+    ./boot/initrd-devices.nix
     ./boot/loader.nix
     ./boot/block.nix
     ./boot/filesystems.nix
