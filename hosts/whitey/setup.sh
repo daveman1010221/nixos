@@ -5,7 +5,7 @@ set -euo pipefail  # Safer script execution
 ### FUNCTIONS
 function confirm() {
     echo -e "\n\033[1;33m[WARNING]\033[0m $1"
-    read -p "Type 'yes' to proceed: " response
+    read -p "Type 'YES' to proceed: " response
     if [[ "$response" != "YES" ]]; then
         echo "Aborting."
         exit 1

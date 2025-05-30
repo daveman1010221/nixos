@@ -10,6 +10,7 @@ nix profile install \
   github:NixOS/nixpkgs#kitty \
   github:NixOS/nixpkgs#fish \
   github:NixOS/nixpkgs#ripgrep \
+  github:NixOS/nixpkgs#tree \
   github:daveman1010221/nix-neovim || true
 
 echo "[INFO] Creating /etc/shells if missing and adding valid shells"
