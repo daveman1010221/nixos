@@ -116,13 +116,42 @@
       let
         hostDir   = ./hosts/${hostName};
 
-        # host-specific kernel overlay
-        hostKernelOverlay =
-        import (hostDir + /custom-kernel.nix) {
-          inherit myConfig myPubCert myPrivKey;
-        };
+        # ── gather host-specific modules ─────────────────────────────────
+        hostModuleDir = hostDir + "/modules";
+        
+        hostModules =
+          if builtins.pathExists hostModuleDir
+          then
+            lib.filter
+              (p: lib.hasSuffix ".nix" p)
+              (lib.filesystem.listFilesRecursive hostModuleDir)
+          else
+            [ ];
 
-        pkgsForHost  = pkgsFor [ hostKernelOverlay ] system;
+        # ── gather host-specific overlays ────────────────────────────────
+        hostOverlays =
+          let
+            overlayDir = hostDir + "/overlays";
+
+            # pick every *.nix that returns an overlay function
+            overlayFiles =
+              if builtins.pathExists overlayDir
+              then
+                lib.filter
+                  (p: lib.hasSuffix ".nix" p)
+                  (lib.filesystem.listFiles overlayDir)
+              else
+                [ ];   # no overlays for this host
+          in
+            # import every *.nix in overlays/
+            map import overlayFiles
+            # plus custom kernel overlay if it exists
+            ++ lib.optional (builtins.pathExists (hostDir + "/overlays/custom-kernel.nix"))
+                 (import (hostDir + "/overlays/custom-kernel.nix") {
+                   inherit myConfig myPubCert myPrivKey;
+                 });
+
+        pkgsForHost = pkgsFor hostOverlays system;
 
         myPackages = import (hostDir + /packages.nix) {
           pkgs = pkgsForHost;
@@ -606,7 +635,8 @@
             # NixOS state version
             system.stateVersion = "24.05";
           })
-        ];
+        ]
+        ++ hostModules;                 # every per–host extra module
       };
   in {
     nixosConfigurations =
