@@ -6,7 +6,7 @@ set -euo pipefail  # Safer script execution
 function confirm() {
     echo -e "\n\033[1;33m[WARNING]\033[0m $1"
     read -p "Type 'yes' to proceed: " response
-    if [[ "$response" != "yes" ]]; then
+    if [[ "$response" != "YES" ]]; then
         echo "Aborting."
         exit 1
     fi
@@ -51,9 +51,9 @@ fi
 
 echo -e "\n\033[1;33m[WARNING]\033[0m The target boot drive is set to: \033[1;36m${DEFAULT_BOOT}\033[0m"
 echo "Detected details:"
-fdisk -l "${DEFAULT_BOOT}" 2>/dev/null | grep "Disk ${DEFAULT_BOOT}"
+sudo fdisk -l "${DEFAULT_BOOT}" 2>/dev/null | grep "Disk ${DEFAULT_BOOT}"
 
-confirm "Is this the correct drive? This will ERASE and REINSTALL your system! Type 'yes' to proceed."
+confirm "Is this the correct drive? This will ERASE and REINSTALL your system! Type 'YES' to proceed."
 
 BLOCK_01="nvme0n1"
 BLOCK_02="nvme1n1"
@@ -70,9 +70,18 @@ KEYS_DIR="${SECRETS_MOUNT}/keys"
 
 NIXOS_REPO="https://github.com/daveman1010221/nixos.git"
 
+# Ensure OpenSSL is installed
+if ! command -v openssl &>/dev/null; then
+    echo -e "\033[1;34m[INFO]\033[0m Installing OpenSSL..."
+    if ! nix profile install nixpkgs#openssl --extra-experimental-features nix-command --extra-experimental-features flakes; then
+        echo -e "\033[1;31m[ERROR]\033[0m Failed to install OpenSSL! Check your Nix setup."
+        exit 1
+    fi
+fi
+
 ### PRE-FLIGHT CHECKS
 echo -e "\033[1;34m[INFO]\033[0m Checking required commands..."
-for cmd in parted mdadm pvcreate vgcreate lvcreate mkfs.ext4 mkfs.f2fs mkfs.vfat git; do
+for cmd in openssl parted mdadm pvcreate vgcreate lvcreate mkfs.ext4 mkfs.f2fs mkfs.vfat git; do
     check_command "$cmd"
 done
 
@@ -81,23 +90,23 @@ echo -e "\033[1;34m[INFO]\033[0m Ensuring all partitions and RAID devices are re
 
 # 1) Turn off all swap, if any
 echo -e "\033[1;34m[INFO]\033[0m Turning off swap (if active)..."
-swapoff -a || true
+sudo swapoff -a || true
 
 # 2) Unmount everything under /mnt (including nested mounts like /mnt/boot, /mnt/boot/EFI, etc.)
 echo -e "\033[1;34m[INFO]\033[0m Unmounting all filesystems from /mnt..."
 if mount | grep -q "/mnt/"; then
-    umount -R /mnt || {
+    sudo umount -R /mnt || {
         echo -e "\033[1;33m[WARNING]\033[0m Some /mnt submounts may still be busy. Forcing lazy unmount..."
-        umount -lR /mnt || true
+        sudo umount -lR /mnt || true
     }
 fi
 
 # If your script sometimes mounts /mnt/boot or /mnt/boot/EFI separately, unmount them, too:
 if mount | grep -q "/mnt/boot/EFI"; then
-    umount /mnt/boot/EFI || umount -l /mnt/boot/EFI || true
+    sudo umount /mnt/boot/EFI || umount -l /mnt/boot/EFI || true
 fi
 if mount | grep -q "/mnt/boot "; then
-    umount /mnt/boot || umount -l /mnt/boot || true
+    sudo umount /mnt/boot || umount -l /mnt/boot || true
 fi
 
 # 3) Remove LVM logical volumes and the volume group
@@ -107,23 +116,23 @@ fi
 echo -e "\033[1;34m[INFO]\033[0m Removing LVM volumes & volume group..."
 if vgs nix &>/dev/null; then
     # Remove all logical volumes in the "nix" VG
-    lvremove -fy nix || true
+    sudo lvremove -fy nix || true
 
     # Remove the "nix" volume group entirely
-    vgremove -fy nix || true
+    sudo vgremove -fy nix || true
 fi
 
 # 4) Stop and remove ANY active mdadm RAID arrays (like /dev/md0)
 echo -e "\033[1;34m[INFO]\033[0m Stopping RAID arrays..."
-mdadm --stop --scan || true
+sudo mdadm --stop --scan || true
 
 # Double-check each /dev/md* in case it didn't get removed
 for array in $(ls /dev/md* 2>/dev/null || true); do
-    mdadm --stop "$array"   2>/dev/null || true
-    mdadm --remove "$array" 2>/dev/null || true
+    sudo mdadm --stop "$array"   2>/dev/null || true
+    sudo mdadm --remove "$array" 2>/dev/null || true
     # Also zero superblock if it’s still recognized as an MD device
-    mdadm --zero-superblock "$array" 2>/dev/null || true
-    wipefs -a "$array"      2>/dev/null || true
+    sudo mdadm --zero-superblock "$array" 2>/dev/null || true
+    sudo wipefs -a "$array"      2>/dev/null || true
 done
 
 # 5) Close or remove ANY leftover device mapper nodes because now LVM and RAID
@@ -135,7 +144,7 @@ function nuke_mapper_device() {
     local mapper_name="$1"
     if dmsetup info "$mapper_name" &>/dev/null; then
         echo -e "\033[1;33m[WARNING]\033[0m Forcing removal of /dev/mapper/$mapper_name"
-        dmsetup remove -f "$mapper_name" || true
+        sudo dmsetup remove -f "$mapper_name" || true
     fi
 }
 
@@ -143,126 +152,126 @@ while read -r mapper_line; do
     mapper_device=$(echo "$mapper_line" | awk '{print $1}')
     # "No devices found" line is possible
     [[ "$mapper_device" == "No" ]] && continue
-    nuke_mapper_device "$mapper_device"
-done < <(dmsetup ls 2>/dev/null || echo "")
+    sudo nuke_mapper_device "$mapper_device"
+done < <(sudo dmsetup ls 2>/dev/null || echo "")
 
 # 6) Finally, wipe the partition table on the DEFAULT_BOOT drive
 echo -e "\033[1;34m[INFO]\033[0m Wiping partition table on ${DEFAULT_BOOT}..."
 for i in {1..3}; do
-    wipefs -a "${DEFAULT_BOOT}" || true
+    sudo wipefs -a "${DEFAULT_BOOT}" || true
 done
-partprobe "${DEFAULT_BOOT}" || echo "Reboot may be required."
+sudo partprobe "${DEFAULT_BOOT}" || echo "Reboot may be required."
 
 ### PARTITIONING ###
 echo -e "\033[1;34m[INFO]\033[0m Partitioning ${DEFAULT_BOOT}..."
-parted -s ${DEFAULT_BOOT} mklabel gpt
+sudo parted -s ${DEFAULT_BOOT} mklabel gpt
 
 # 1  ESP    512 MiB
-parted -s ${DEFAULT_BOOT} mkpart ESP fat32     1MiB  551MiB
-parted -s ${DEFAULT_BOOT} set   1 esp on
+sudo parted -s ${DEFAULT_BOOT} mkpart ESP fat32     1MiB  551MiB
+sudo parted -s ${DEFAULT_BOOT} set   1 esp on
 
 # 2  /boot  2 GiB
-parted -s ${DEFAULT_BOOT} mkpart BOOT ext4    551MiB 2599MiB
+sudo parted -s ${DEFAULT_BOOT} mkpart BOOT ext4    551MiB 2599MiB
 
 # 3  /secrets 256 MiB (will be LUKS2 → ext4)
-parted -s ${DEFAULT_BOOT} mkpart SECRETS ext4 2599MiB 2855MiB
+sudo parted -s ${DEFAULT_BOOT} mkpart SECRETS ext4 2599MiB 2855MiB
 
 # 4  /data  remainder of the stick
-parted -s ${DEFAULT_BOOT} mkpart DATA ext4    2855MiB 100%
+sudo parted -s ${DEFAULT_BOOT} mkpart DATA ext4    2855MiB 100%
 
 ### FORMATTING EFI ###
 echo -e "\033[1;34m[INFO]\033[0m Formatting EFI partition..."
-mkfs.vfat -v -F 32 ${EFI_PARTITION}
+sudo mkfs.vfat -v -F 32 ${EFI_PARTITION}
 
 ### FORMATTING & MOUNTING /BOOT ###
 echo -e "\033[1;34m[INFO]\033[0m Formatting and mounting /boot..."
-mkfs.ext4 ${BOOT_PARTITION}
-mkdir -p ${BOOT_MOUNT}
-mount ${BOOT_PARTITION} ${BOOT_MOUNT}
-mkdir -p ${BOOT_MOUNT}/EFI
-mount ${EFI_PARTITION} ${BOOT_MOUNT}/EFI
+sudo mkfs.ext4 ${BOOT_PARTITION}
+sudo mkdir -p ${BOOT_MOUNT}
+sudo mount ${BOOT_PARTITION} ${BOOT_MOUNT}
+sudo mkdir -p ${BOOT_MOUNT}/EFI
+sudo mount ${EFI_PARTITION} ${BOOT_MOUNT}/EFI
 
 # create & unlock the **LUKS2 /secrets** slice
 echo -e "\033[1;34m[INFO]\033[0m Creating encrypted /secrets partition (you’ll be prompted once)..."
-cryptsetup luksFormat --type luks2 --cipher aes-xts-plain64 --key-size 512 --hash sha256 ${SECRETS_PARTITION}
-cryptsetup luksOpen ${SECRETS_PARTITION} secrets_crypt
-mkfs.ext4  /dev/mapper/secrets_crypt
-mkdir -p   ${SECRETS_MOUNT}
-mount      /dev/mapper/secrets_crypt ${SECRETS_MOUNT}
+sudo cryptsetup luksFormat --type luks2 --cipher aes-xts-plain64 --key-size 512 --hash sha256 ${SECRETS_PARTITION}
+sudo cryptsetup luksOpen ${SECRETS_PARTITION} secrets_crypt
+sudo mkfs.ext4  /dev/mapper/secrets_crypt
+sudo mkdir -p   ${SECRETS_MOUNT}
+sudo mount      /dev/mapper/secrets_crypt ${SECRETS_MOUNT}
 
 # This is the hardware encryption key. This can be multiple keys. Keeping it simple for now.
-mkdir -p ${KEYS_DIR}
-openssl rand -out ${KEYS_DIR}/nvme.key 64
-chmod 400 ${KEYS_DIR}/nvme.key
+sudo mkdir -p ${KEYS_DIR}
+sudo openssl rand -out ${KEYS_DIR}/nvme.key 64
+sudo chmod 400 ${KEYS_DIR}/nvme.key
 
 ### CREATING RAID-0 ###
 if [ -e /dev/md0 ]; then
     echo -e "\033[1;34m[INFO]\033[0m Stopping existing RAID-0 array..."
-    mdadm --stop /dev/md0 || true
-    mdadm --remove /dev/md0 || true
-    wipefs -a /dev/md0 || true
-    mdadm --zero-superblock /dev/${BLOCK_01} /dev/${BLOCK_02} || true
+    sudo mdadm --stop /dev/md0 || true
+    sudo mdadm --remove /dev/md0 || true
+    sudo wipefs -a /dev/md0 || true
+    sudo mdadm --zero-superblock /dev/${BLOCK_01} /dev/${BLOCK_02} || true
 fi
 
 echo -e "\033[1;34m[INFO]\033[0m Creating RAID-0 array..."
-mdadm --create --verbose /dev/md0 --level=0 --raid-devices=2 --chunk=512K /dev/${BLOCK_01} /dev/${BLOCK_02}
+sudo mdadm --create --verbose /dev/md0 --level=0 --raid-devices=2 --chunk=512K /dev/${BLOCK_01} /dev/${BLOCK_02}
 
 ### CREATING LVM ###
 echo -e "\033[1;34m[INFO]\033[0m Creating LVM structure..."
 
 # 1️⃣  Create the Physical Volume
-pvcreate /dev/md0 || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create Physical Volume!"; exit 1; }
+sudo pvcreate /dev/md0 || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create Physical Volume!"; exit 1; }
 
 # 2️⃣  Create the Volume Group
-vgcreate -s 16M nix /dev/md0 || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create Volume Group!"; exit 1; }
+sudo vgcreate -s 16M nix /dev/md0 || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create Volume Group!"; exit 1; }
 
 # 3️⃣  Create Logical Volumes
-lvcreate -L 96G  -n swap nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create swap LV!"; exit 1; }
-lvcreate -L 80G  -n tmp  nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create tmp LV!"; exit 1; }
-lvcreate -L 80G  -n var  nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create var LV!"; exit 1; }
-lvcreate -L 200G -n root nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create root LV!"; exit 1; }
-lvcreate -L 500G -n home nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create home LV!"; exit 1; }
+sudo lvcreate -L 96G  -n swap nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create swap LV!"; exit 1; }
+sudo lvcreate -L 80G  -n tmp  nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create tmp LV!"; exit 1; }
+sudo lvcreate -L 80G  -n var  nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create var LV!"; exit 1; }
+sudo lvcreate -L 200G -n root nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create root LV!"; exit 1; }
+sudo lvcreate -L 500G -n home nix -C y || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create home LV!"; exit 1; }
 
 # 4️⃣  Verify LVM setup
 echo -e "\033[1;34m[INFO]\033[0m Verifying LVM setup..."
-vgdisplay nix
-lvdisplay nix
+sudo vgdisplay nix
+sudo lvdisplay nix
 
 # 5️⃣  Format Logical Volumes with F2FS
 echo -e "\033[1;34m[INFO]\033[0m Formatting Logical Volumes with F2FS..."
-mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum,flexible_inline_xattr -z 512 /dev/nix/tmp  || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format tmp LV!"; exit 1; }
-mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum,flexible_inline_xattr,fs_verity -z 512 /dev/nix/var  || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format var LV!"; exit 1; }
-mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum,flexible_inline_xattr -z 512 /dev/nix/root || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format root LV!"; exit 1; }
-mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum,flexible_inline_xattr -z 512 /dev/nix/home || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format home LV!"; exit 1; }
+sudo mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum,flexible_inline_xattr -z 512 /dev/nix/tmp  || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format tmp LV!"; exit 1; }
+sudo mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum,flexible_inline_xattr,fs_verity -z 512 /dev/nix/var  || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format var LV!"; exit 1; }
+sudo mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum,flexible_inline_xattr -z 512 /dev/nix/root || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format root LV!"; exit 1; }
+sudo mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum,flexible_inline_xattr -z 512 /dev/nix/home || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format home LV!"; exit 1; }
 
 # 6️⃣  Configure Swap
 echo -e "\033[1;34m[INFO]\033[0m Configuring Swap..."
-mkswap /dev/nix/swap
-swapon /dev/nix/swap
+sudo mkswap /dev/nix/swap
+sudo swapon /dev/nix/swap
 
 # 6.5 Unmount Boot and EFI (First step)
 echo -e "\033[1;34m[INFO]\033[0m Unmounting Boot and EFI..."
-umount ${BOOT_MOUNT}/EFI || true
-umount ${BOOT_MOUNT} || true
-umount ${SECRETS_MOUNT}  || true
-cryptsetup luksClose secrets_crypt || true
+sudo umount ${BOOT_MOUNT}/EFI || true
+sudo umount ${BOOT_MOUNT} || true
+sudo umount ${SECRETS_MOUNT}  || true
+sudo cryptsetup luksClose secrets_crypt || true
 
 # 7️⃣  Mount Logical Volumes
 echo -e "\033[1;34m[INFO]\033[0m Mounting Logical Volumes..."
-mount /dev/nix/root /mnt || { echo -e "\033[1;31m[ERROR]\033[0m Failed to mount root!"; exit 1; }
-mkdir -p /mnt/tmp  && mount /dev/nix/tmp  /mnt/tmp
-mkdir -p /mnt/var  && mount /dev/nix/var  /mnt/var
-mkdir -p /mnt/home && mount /dev/nix/home /mnt/home
+sudo mount /dev/nix/root /mnt || { echo -e "\033[1;31m[ERROR]\033[0m Failed to mount root!"; exit 1; }
+sudo mkdir -p /mnt/tmp  && mount /dev/nix/tmp  /mnt/tmp
+sudo mkdir -p /mnt/var  && mount /dev/nix/var  /mnt/var
+sudo mkdir -p /mnt/home && mount /dev/nix/home /mnt/home
 
 # 8️⃣  Remount Boot and EFI
 echo -e "\033[1;34m[INFO]\033[0m Remounting Boot and EFI..."
-mkdir -p ${BOOT_MOUNT} && mount ${BOOT_PARTITION} ${BOOT_MOUNT}
-mkdir -p ${BOOT_MOUNT}/EFI && mount ${EFI_PARTITION} ${BOOT_MOUNT}/EFI
+sudo mkdir -p ${BOOT_MOUNT} && mount ${BOOT_PARTITION} ${BOOT_MOUNT}
+sudo mkdir -p ${BOOT_MOUNT}/EFI && mount ${EFI_PARTITION} ${BOOT_MOUNT}/EFI
 
 # remount secrets for the copy-to-nixos step
-mkdir -p ${SECRETS_MOUNT}
-cryptsetup luksOpen ${SECRETS_PARTITION} secrets_crypt
-mount /dev/mapper/secrets_crypt ${SECRETS_MOUNT}
+sudo mkdir -p ${SECRETS_MOUNT}
+sudo cryptsetup luksOpen ${SECRETS_PARTITION} secrets_crypt
+sudo mount /dev/mapper/secrets_crypt ${SECRETS_MOUNT}
 
 echo -e "\033[1;34m[INFO]\033[0m Verifying that all devices and filesystems are correctly set up..."
 
@@ -323,10 +332,10 @@ echo -e "\033[1;34m[INFO]\033[0m All devices, filesystems, and mounts are correc
 
 ### CLONING NIXOS CONFIG FROM GIT ###
 echo -e "\033[1;34m[INFO]\033[0m Generating initial hardware configuration..."
-nixos-generate-config --root /mnt  # <-- Creates initial /mnt/etc/* files
+sudo nixos-generate-config --root /mnt  # <-- Creates initial /mnt/etc/* files
 
-echo -e "\033[1;34m[INFO]\033[0m Backing up hardware configuration..."
-mv /mnt/etc/nixos/hardware-configuration.nix /mnt/etc/hardware-configuration.nix.bak
+#echo -e "\033[1;34m[INFO]\033[0m Backing up hardware configuration..."
+#sudo mv /mnt/etc/nixos/hardware-configuration.nix /mnt/etc/nixos/hardware-configuration.nix.bak
 
 ### ASK USER FOR HOSTNAME ###
 echo -e "\033[1;34m[INFO]\033[0m Please enter the hostname for this system:"
@@ -338,12 +347,15 @@ if [[ ! "$HOSTNAME" =~ ^[a-zA-Z0-9._-]+$ ]]; then
     exit 1
 fi
 
-echo -e "\033[1;34m[INFO]\033[0m Cloning NixOS flake configuration..."
-rm -rf /mnt/etc/nixos  # Remove any existing repo (to avoid conflicts)
-git clone ${NIXOS_REPO} /mnt/etc/nixos
+echo -e "\033[1;34m[INFO]\033[0m Copying NixOS flake repo to its official destination..."
+sudo cp -r /home/nixos/nixos /mnt/etc
 
-echo -e "\033[1;34m[INFO]\033[0m Restoring hardware configuration..."
-mv /mnt/etc/hardware-configuration.nix.bak /mnt/etc/nixos/hardware-configuration.nix
+echo -e "\033[1;34m[INFO]\033[0m Moving the hardware configuration to the host-specific path in the repo..."
+mv /mnt/etc/nixos/hardware-configuration.nix /mnt/etc/nixos/hosts/$HOSTNAME/hardware-configuration.nix
+mv /mnt/etc/nixos/configuration.nix /mnt/etc/nixos/configuration.nix.installer
+
+cd /mnt/etc/nixos
+sed -i '/imports = \[/a\    ./hardware-configuration.nix' /mnt/etc/nixos/hosts/$HOSTNAME/extra.nix
 
 echo -e "\033[1;34m[INFO]\033[0m Extracting hardware-specific details for flake configuration..."
 
@@ -370,7 +382,7 @@ if [[ -z "$nvme0_path" || -z "$nvme1_path" ]]; then
 fi
 
 # Validate extracted values against hardware-configuration.nix
-HWC_PATH="/mnt/etc/nixos/hardware-configuration.nix"
+HWC_PATH="/mnt/etc/nixos/hosts/$HOSTNAME/hardware-configuration.nix"
 echo -e "\033[1;34m[INFO]\033[0m Verifying extracted values exist in hardware-configuration.nix..."
 
 MISSING_VALUES=0
@@ -385,37 +397,44 @@ if [[ $MISSING_VALUES -gt 0 ]]; then
     exit 1
 fi
 
-echo -e "\033[1;34m[INFO]\033[0m Updating flake.nix with detected hardware details..."
+echo -e "\033[1;34m[INFO]\033[0m Writing ${BOOT_MOUNT}/secrets/flakey.json ..."
 
-# Ensure the secrets.nix file is created and write the variables to it
-cat <<EOF > /mnt/etc/nixos/secrets.nix
+# ensure the directory exists on the *boot* filesystem
+sudo mkdir -p "${BOOT_MOUNT}/secrets"
+
+sudo cat > "${BOOT_MOUNT}/secrets/flakey.json" <<EOF
 {
-  PLACEHOLDER_NVME0 = "${nvme0_path}";
-  PLACEHOLDER_NVME1 = "${nvme1_path}";
-  PLACEHOLDER_BOOT_UUID = "/dev/disk/by-uuid/${boot_uuid}";
-  PLACEHOLDER_BOOT_FS_UUID = "/dev/disk/by-uuid/${boot_fs_uuid}";
-  PLACEHOLDER_EFI_FS_UUID = "/dev/disk/by-uuid/${efi_fs_uuid}";
-  PLACEHOLDER_ROOT = "/dev/disk/by-uuid/${root_fs_uuid}";
-  PLACEHOLDER_VAR = "/dev/disk/by-uuid/${var_fs_uuid}";
-  PLACEHOLDER_TMP = "/dev/disk/by-uuid/${tmp_fs_uuid}";
-  PLACEHOLDER_HOME = "/dev/disk/by-uuid/${home_fs_uuid}";
-  PLACEHOLDER_SECRETS  = "/dev/disk/by-uuid/${secrets_fs_uuid}";
-  PLACEHOLDER_HOSTNAME = "${HOSTNAME}";
+  "PLACEHOLDER_NVME0":  "${nvme0_path}",
+  "PLACEHOLDER_NVME1":  "${nvme1_path}",
+
+  "PLACEHOLDER_BOOT_FS_UUID":   "/dev/disk/by-uuid/${boot_fs_uuid}",
+  "PLACEHOLDER_EFI_FS_UUID":    "/dev/disk/by-uuid/${efi_fs_uuid}",
+
+  "PLACEHOLDER_ROOT":  "/dev/disk/by-uuid/${root_fs_uuid}",
+  "PLACEHOLDER_VAR":   "/dev/disk/by-uuid/${var_fs_uuid}",
+  "PLACEHOLDER_TMP":   "/dev/disk/by-uuid/${tmp_fs_uuid}",
+  "PLACEHOLDER_HOME":  "/dev/disk/by-uuid/${home_fs_uuid}",
+
+  "PLACEHOLDER_SECRETS": "/dev/disk/by-uuid/${secrets_fs_uuid}",
+
+  "GIT_SMTP_PASS": "mlucmulyvpqlfprb"
 }
 EOF
 
-# Ensure the secrets.nix file is saved
-chmod 600 /mnt/etc/nixos/secrets.nix
-
-echo -e "\033[1;34m[INFO]\033[0m Flake configuration updated successfully!"
+sudo chmod 600 "${BOOT_MOUNT}/secrets/flakey.json"
 
 ### APPLYING SYSTEM CONFIGURATION ###
-if [[ -z "$HOSTNAME" ]]; then
-    echo -e "\033[1;31m[ERROR]\033[0m No hostname provided. Aborting installation."
-    exit 1
-fi
+"Hard exit"
+exit 1
 
 echo -e "\033[1;34m[INFO]\033[0m Installing NixOS from flake..."
-nixos-install --flake /mnt/etc/nixos#$HOSTNAME
+nixos-install \
+  --flake /mnt/etc/nixos#${HOSTNAME} \
+  --override-input secrets-empty path:${BOOT_MOUNT}/secrets/flakey.json
+
+sudo umount ${SECRETS_MOUNT}
+sudo cryptsetup luksClose secrets_crypt
+sudo umount "${BOOT_MOUNT}/EFI"
+sudo umount "${BOOT_MOUNT}"
 
 echo -e "\033[1;32m[SUCCESS]\033[0m Installation complete! Reboot when ready."
