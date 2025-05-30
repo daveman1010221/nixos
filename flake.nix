@@ -171,7 +171,6 @@
         };
         modules = commonModules ++ [
           (hostDir + /hardware.nix)        # or hardware-configuration.nix
-          (hostDir + /extra.nix)           # pulls boot/, services/, …
 
           ({ config, lib, pkgs, ... }: let
 
