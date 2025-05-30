@@ -37,5 +37,20 @@ echo "[INFO] Configuring Git identity"
 git config --global user.name "David Shepard"
 git config --global user.email "daveman1010220@gmail.com"
 
+echo "[INFO] Setting up Git credential storage"
+
+read -rp "GitHub username: " GH_USER
+read -rsp "GitHub personal access token: " GH_TOKEN
+echo
+
+cat > ~/.git-credentials <<EOF
+https://${GH_USER}:${GH_TOKEN}@github.com
+EOF
+
+chmod 600 ~/.git-credentials
+git config --global credential.helper store
+
+echo "[INFO] Git credentials stored in ~/.git-credentials"
+
 echo "[DONE] Basic shell environment is now set up."
 echo "Restart your shell or run 'exec fish' to activate."
