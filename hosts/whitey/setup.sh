@@ -334,9 +334,6 @@ echo -e "\033[1;34m[INFO]\033[0m All devices, filesystems, and mounts are correc
 echo -e "\033[1;34m[INFO]\033[0m Generating initial hardware configuration..."
 sudo nixos-generate-config --root /mnt  # <-- Creates initial /mnt/etc/* files
 
-#echo -e "\033[1;34m[INFO]\033[0m Backing up hardware configuration..."
-#sudo mv /mnt/etc/nixos/hardware-configuration.nix /mnt/etc/nixos/hardware-configuration.nix.bak
-
 ### ASK USER FOR HOSTNAME ###
 echo -e "\033[1;34m[INFO]\033[0m Please enter the hostname for this system:"
 read -p "Hostname: " HOSTNAME
@@ -353,9 +350,6 @@ sudo cp -r /home/nixos/nixos /mnt/etc
 echo -e "\033[1;34m[INFO]\033[0m Moving the hardware configuration to the host-specific path in the repo..."
 mv /mnt/etc/nixos/hardware-configuration.nix /mnt/etc/nixos/hosts/$HOSTNAME/hardware-configuration.nix
 mv /mnt/etc/nixos/configuration.nix /mnt/etc/nixos/configuration.nix.installer
-
-cd /mnt/etc/nixos
-sed -i '/imports = \[/a\    ./hardware-configuration.nix' /mnt/etc/nixos/hosts/$HOSTNAME/extra.nix
 
 echo -e "\033[1;34m[INFO]\033[0m Extracting hardware-specific details for flake configuration..."
 
