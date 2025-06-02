@@ -134,14 +134,16 @@
             overlayDir = hostDir + "/overlays";
 
             # pick every *.nix that returns an overlay function
+            # keep only the first-level directory .nix files
             overlayFiles =
-              if builtins.pathExists overlayDir
-              then
-                lib.filter
-                  (p: lib.hasSuffix ".nix" p)
-                  (lib.filesystem.listFiles overlayDir)
-              else
-                [ ];   # no overlays for this host
+            if builtins.pathExists overlayDir then
+              lib.filter
+                (p: lib.hasSuffix ".nix" p && 
+                     dirOf p == overlayDir &&
+                     baseNameOf p != "custom-kernel.nix")
+                (lib.filesystem.listFilesRecursive overlayDir)
+            else
+              [ ];   # no overlays for this host
           in
             # import every *.nix in overlays/
             map import overlayFiles
