@@ -5,21 +5,6 @@
   dotacatFast
 }:
 let
-  rustSysroot = pkgs.buildEnv {
-    name = "rust-sysroot";
-    paths = [
-      pkgs.glibc
-      pkgs.glibc.dev
-      pkgs.gcc.cc.lib
-    ];
-  };
-
-  clangLldWrapper = pkgs.writeShellScriptBin "clang-lld-wrapper" ''
-    exec ${pkgs.llvmPackages_19.clang}/bin/clang \
-      -fuse-ld=lld \
-      --sysroot=${rustSysroot} \
-      "$@"
-  '';
 in
 {
     # System-wide package list
@@ -141,12 +126,6 @@ in
         libreoffice-fresh
         llvmPackages_19.clangUseLLVM
         clang_19
-        # clang or clang-tools are not strictly needed if stdenv is clang-based
-        # but you can add them if you want the standalone `clang` CLI, e.g.:
-        llvmPackages_19.clang
-        llvmPackages_19.lld
-        glibc
-        clangLldWrapper
         dotacatFast.packages.${system}.default
         lshw
         lsof

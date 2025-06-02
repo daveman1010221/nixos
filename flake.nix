@@ -286,6 +286,21 @@
               systemPackages = myPackages.myPkgs;
 
               sessionVariables.COSMIC_DATA_CONTROL_ENABLED = 1;
+
+              # Make Cargo (and any other build system that honours the usual CC /
+              # CFLAGS variables) call Clang and link with LLD by default.
+              variables = {
+                # compile with clang
+                CC  = "clang";
+                CXX = "clang++";
+
+                # and tell those compilers to use the LLVM linker
+                CFLAGS   = "-fuse-ld=lld";
+                CXXFLAGS = "-fuse-ld=lld";
+
+                # optional, makes `cargo` fall back to pkg-config for native deps
+                PKG_CONFIG_PATH = "${pkgs.pkg-config}/lib/pkgconfig";
+              };
             };
 
             networking = {
