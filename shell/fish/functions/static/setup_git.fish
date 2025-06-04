@@ -1,10 +1,7 @@
 function setup_git
-    echo -n "Enter your Git user name: "
-    read git_user
-    echo -n "Enter your Git email: "
-    read git_email
-    echo -n "Do you want to configure Git credentials helper? (y/N): "
-    read use_creds
+    read --prompt "Enter your Git user name: " git_user
+    read --prompt "Enter your Git email: " git_email
+    read --prompt "Do you want to configure Git credentials helper? (y/N): " use_creds
 
     git config --global user.name "$git_user"
     git config --global user.email "$git_email"
