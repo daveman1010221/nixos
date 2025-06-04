@@ -83,13 +83,20 @@
         (builtins.readDir ./hosts)
     );
 
+    # ── discover built-in modules ───────────────────────────────────────
+    moduleDir = ./flakes/modules;
+
+    discoveredModules =
+      lib.sort (a: b: (toString a) < (toString b))  # keep a reproducible order
+        (lib.filter (p: lib.hasSuffix ".nix" (toString p))
+          (lib.filesystem.listFilesRecursive moduleDir));
+
     # common modules for every machine
-    commonModules = [
-      flakes/modules/boot-options.nix
-      flakes/modules/initrd-base.nix
-      nixos-cosmic.nixosModules.default
-      # ./flakes/modules/base-desktop.nix   ← if/when you split the giant block
-    ];
+    commonModules = discoveredModules ++
+      [
+        nixos-cosmic.nixosModules.default
+        # ./flakes/modules/base-desktop.nix ← when you split the giant block
+      ];
 
     # overlays shared by all hosts
     commonOverlays = [
@@ -287,20 +294,6 @@
 
               sessionVariables.COSMIC_DATA_CONTROL_ENABLED = 1;
 
-              # Make Cargo (and any other build system that honours the usual CC /
-              # CFLAGS variables) call Clang and link with LLD by default.
-              variables = {
-                # compile with clang
-                CC  = "clang";
-                CXX = "clang++";
-
-                # and tell those compilers to use the LLVM linker
-                CFLAGS   = "-fuse-ld=lld";
-                CXXFLAGS = "-fuse-ld=lld";
-
-                # optional, makes `cargo` fall back to pkg-config for native deps
-                PKG_CONFIG_PATH = "${pkgs.pkg-config}/lib/pkgconfig";
-              };
             };
 
             networking = {
