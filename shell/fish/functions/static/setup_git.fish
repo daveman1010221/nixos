@@ -8,7 +8,7 @@ function setup_git
 
     if test (string match -r '^[Yy]' -- $use_creds)
         read --prompt-str "Enter your Git username (for HTTPS auth): " gh_user
-        read --prompt-str "Enter your Git password or PAT: " -l gh_pass
+        read --prompt-str "Enter your Git password or PAT: " --silent gh_pass
 
         git config --global credential.helper store
 
