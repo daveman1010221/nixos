@@ -124,8 +124,9 @@ in
         cri-o
         libcanberra-gtk3
         libreoffice-fresh
-        llvmPackages_19.clangUseLLVM
-        clang_19
+        llvmPackages_20.clangUseLLVM
+        clang_20
+        lld_20
         dotacatFast.packages.${system}.default
         lshw
         lsof
@@ -205,6 +206,7 @@ in
         wordbook
         wasmer
         wasmer-pack
+        wasm-bindgen-cli_0_2_100
         wayland-utils
         wget
         wine64                                      # support 64-bit only
