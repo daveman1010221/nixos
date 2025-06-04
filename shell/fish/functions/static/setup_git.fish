@@ -16,8 +16,9 @@ function setup_git
         read -l gh_pass
 
         git config --global credential.helper store
+
         echo "https://$gh_user:$gh_pass@github.com" > ~/.git-credentials
-        chmod 600 ~/.git-credentials.d/github
+        chmod 600 ~/.git-credentials
     end
 
     echo "Git is configured. Welcome to 2009."
