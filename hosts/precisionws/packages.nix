@@ -133,7 +133,6 @@ in
         lvm2 # Provides LVM tools: pvcreate, vgcreate, lvcreate
         mdadm # RAID management
         mdcat
-        #microsoft-edge
         plocate
         cowsay
         neofetch
@@ -188,7 +187,9 @@ in
         tmux
         tree
         tree-sitter
+        unzip
         usbutils
+        uv
         (vscode-with-extensions.override {
           vscodeExtensions = with vscode-extensions; [
             bbenoist.nix
