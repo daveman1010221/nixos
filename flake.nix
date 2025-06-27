@@ -1,19 +1,17 @@
 {
   inputs = {
-    nixpkgs.follows = "nixos-cosmic/nixpkgs";
-
-    nixos-cosmic.url = "github:lilyinstarlight/nixos-cosmic";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs = {
-        nixpkgs.follows = "nixos-cosmic/nixpkgs";
+        nixpkgs.follows = "nixpkgs";
       };
     };
     myNeovimOverlay = {
       url = "github:daveman1010221/nix-neovim";
       inputs = {
-        nixpkgs.follows = "nixos-cosmic/nixpkgs";
+        nixpkgs.follows = "nixpkgs";
         flake-utils.url = "github:numtide/flake-utils";
       };
     };
@@ -52,7 +50,7 @@
   #   });
   # })
 
-  outputs = { self, nixpkgs, nixos-cosmic, rust-overlay, myNeovimOverlay, dotacatFast, secrets-empty }:
+  outputs = { self, nixpkgs, rust-overlay, myNeovimOverlay, dotacatFast, secrets-empty }:
   let
     lib = nixpkgs.lib;
     system = "x86_64-linux";
@@ -94,7 +92,6 @@
     # common modules for every machine
     commonModules = discoveredModules ++
       [
-        nixos-cosmic.nixosModules.default
         # ./flakes/modules/base-desktop.nix ← when you split the giant block
       ];
 
@@ -241,12 +238,8 @@
             nix = {
               settings = {
                 substituters = [
-                  "https://cosmic.cachix.org/"
-                  "https://airtool-dev.cachix.org"
                 ];
                 trusted-public-keys = [
-                  "cosmic.cachix.org-1:Dya9IyXD4xdBehWjrkPv6rtxpmMdRel02smYzA85dPE="
-                  "airtool-dev.cachix.org-1:dfX1T1ibTyc1dIOSWtxQxbpPJUya00RVFu9gLtiWvn8="
                 ];
                 trusted-users = [ "root" "djshepard" ];
               };
@@ -479,6 +472,7 @@
               dbus.enable = true;
 
               desktopManager.cosmic.enable = true;
+              desktopManager.cosmic.xwayland.enable = true;
 
               displayManager.cosmic-greeter.enable = true;
 
@@ -540,6 +534,20 @@
 
               # Enable the OpenSSH daemon.
               openssh.enable = true;
+            };
+
+            systemd.user.services.xdg-desktop-portal-cosmic = {
+              enable = true;
+              description = "xdg-desktop-portal for COSMIC";
+              wantedBy = [ "graphical-session.target" ];
+              after = [ "xdg-desktop-portal.service" ];
+              partOf = [ "graphical-session.target" ];
+
+              serviceConfig = {
+                ExecStart = "${myPackages.wrapped-portal}/bin/xdg-desktop-portal-cosmic-wrapper";
+                Restart = "on-failure";
+                RestartSec = 3;
+              };
             };
 
             systemd = {
@@ -637,6 +645,12 @@
                 };
               };
             };
+
+            xdg.portal.enable = true;
+            xdg.portal.extraPortals = [
+              pkgs.xdg-desktop-portal-cosmic
+            ];
+            xdg.portal.config.common.default = "*";
 
             # System copy configuration
             system.copySystemConfiguration = false;
