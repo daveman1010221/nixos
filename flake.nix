@@ -99,6 +99,7 @@
     commonOverlays = [
       rust-overlay.overlays.default
       myNeovimOverlay.overlays.default
+      (import ./flakes/overlays/git-hooks.nix)
     ];
 
     # helper function: overlayed nixpkgs for any host
@@ -170,6 +171,8 @@
       in nixpkgs.lib.nixosSystem
       {
         inherit system;
+        # <<< make the system use the overlayed set >>>
+        pkgs = pkgsForHost;
         specialArgs = {
             inherit secrets pkgsFor myPackages self lib;
             pkgsForHost = pkgsForHost;   # the set we built above
@@ -221,18 +224,6 @@
           in {
             nixpkgs = {
               hostPlatform = lib.mkDefault "x86_64-linux";
-
-              config = {
-                allowUnfree = true;
-
-                # This doesn't seem to help, at least in all circumstances.
-                # This disables running test during package builds, globally.
-                doCheck = false;
-
-                nvidia = {
-                  acceptLicense = true;
-                };
-              };
             };
 
             nix = {
@@ -281,6 +272,15 @@
                     runtime = "runc"
                   '';
                 }
+                {
+                  ## Provide a complete templates directory that already
+                  ## contains the hook – copy it so GC can’t break the path.
+                  "git-templates".source = pkgs.runCommand "git-templates" {} ''
+                    mkdir -p "$out/hooks"
+                    install -m0755 "${pkgs.commitMsgHook}/bin/commit-msg-hook" \
+                                   "$out/hooks/commit-msg"
+                  '';
+                }
               ];
 
               systemPackages = myPackages.myPkgs;
@@ -324,11 +324,14 @@
                   end
                 '';
               };
+
               git = {
-                  enable = true;
-                  lfs.enable = true;
-                  package = "${pkgs.gitFull}";
-                  #prompt.enable = true;
+                enable = true;
+                lfs.enable = true;
+                package = pkgs.gitFull;
+
+                # Point git at the templates we drop in /etc below.
+                config.init.templatedir = "/etc/git-templates";
               };
 
               gnupg.agent = {
