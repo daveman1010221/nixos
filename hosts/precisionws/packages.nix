@@ -5,82 +5,110 @@
   dotacatFast
 }:
 let
-in
-{
-    # System-wide package list
+  wrapped-portal = pkgs.writeShellScriptBin "xdg-desktop-portal-cosmic-wrapper" ''
+    export WAYLAND_DISPLAY=$(ls /run/user/$UID | grep -E '^wayland-[0-9]+$' | head -n1)
+    export XDG_SESSION_TYPE=wayland
+    export XDG_CURRENT_DESKTOP=cosmic
+    exec ${pkgs.xdg-desktop-portal-cosmic}/libexec/xdg-desktop-portal-cosmic
+  '';
+in {
     myPkgs = with pkgs; [
+        wrapped-portal
+
         (rust-bin.nightly.latest.default.override {
           targets = [ "wasm32-unknown-unknown" ];
           extensions = [ "rust-src" "rust-analyzer" ];
         })
-
-        # Tauri dev
-        cargo-generate
-        cargo-tauri
-        cargo-leptos
-        cachix
-        nodejs
-        gobject-introspection
-        at-spi2-atk
+        (vscode-with-extensions.override {
+          vscodeExtensions = with vscode-extensions; [
+            bbenoist.nix
+            ms-azuretools.vscode-docker
+            dhall.vscode-dhall-lsp-server
+            dhall.dhall-lang
+          ];
+        })
+        (hiPrio xwayland)
         atkmm
-        cairo
-        gdk-pixbuf
-        glib
-        gtk3
-        harfbuzz
-        librsvg
-        libsoup_3
-        pango
-        webkitgtk_4_1
-        tailwindcss
-        esbuild
-
-        nvim-pkg
-        #audit
+        at-spi2-atk
         atuin
         babelfish
         bandwhich
         bat
-        bottom
         bonnie
+        bottles
+        bottom
         btop
         buildkit
+        cachix
+        cairo
+        cargo-generate
+        cargo-leptos
+        cargo-tauri
         cheese
         clamav
+        clang_20
         clangStdenv
         cl-wordle
         cni-plugins
         containerd
+        cosmic-bg
+        cosmic-osd
+        cosmic-term
+        cosmic-idle
+        cosmic-edit
+        cosmic-comp
+        cosmic-store
+        cosmic-randr
+        cosmic-panel
+        cosmic-icons
+        cosmic-files
+        cosmic-player
+        cosmic-session
+        cosmic-greeter
+        cosmic-ext-ctl
+        cosmic-applets
+        cosmic-settings
+        cosmic-launcher
+        cosmic-protocols
+        cosmic-wallpapers
+        cosmic-screenshot
+        cosmic-ext-tweaks
+        cosmic-applibrary
+        cosmic-design-demo
+        cosmic-notifications
+        cosmic-ext-calculator
+        cosmic-settings-daemon
+        cosmic-workspaces-epoch
+        xdg-desktop-portal-cosmic
+        cowsay
+        cri-o
         cryptsetup
         cups
-        deja-dup
+        # deja-dup
         delta
         dhall
-        dhall-nix
-        dhall-yaml
-        dhall-json
-        dhall-docs
         dhall-bash
-        dhall-nixpkgs
+        dhall-docs
+        dhall-json
         dhall-lsp-server
-        dhallPackages.Prelude
+        dhall-nix
+        dhall-nixpkgs
         dhallPackages.dhall-kubernetes
-        haskellPackages.dhall-yaml
-        haskellPackages.dhall-toml
-        # haskellPackages.dhall-check <-- broken
-        # haskellPackages.dhall-secret <-- broken
-        haskellPackages.dhall-openapi
+        dhallPackages.Prelude
+        dhall-yaml
         direnv
         distrobox
         doas
         docker
-        dosfstools # Provides mkfs.vfat for EFI partition
+        dosfstools
+        dotacatFast.packages.${system}.default
         dust
-        e2fsprogs # Provides mkfs.ext4
+        e2fsprogs
         efibootmgr
         efitools
         efivar
-        #epsonscan2
+        esbuild
+        expressvpn
         eza
         fd
         file
@@ -93,20 +121,27 @@ in
         fishPlugins.foreign-env.src
         fishPlugins.grc.src
         fortune
+        furmark
         fwupd-efi
         fzf
+        gdk-pixbuf
         gitFull
-        # git-up    <-- Broken
+        glib
         glmark2
-        furmark
         glxinfo
+        gobject-introspection
         graphviz
         grc
         grex
         grub2_efi
         gst_all_1.gstreamer
+        gtk3
         gtkimageview
         gucharmap
+        harfbuzz
+        haskellPackages.dhall-openapi
+        haskellPackages.dhall-toml
+        haskellPackages.dhall-yaml
         hunspell
         hunspellDicts.en-us
         hyperfine
@@ -114,124 +149,102 @@ in
         jq
         jqp
         kernel-hardening-checker
+        kind
         kitty
         kitty-img
         kitty-themes
         kompose
         kubectl
-        kind
         kubernetes-helm
-        cri-o
         libcanberra-gtk3
         libreoffice-fresh
-        llvmPackages_20.clangUseLLVM
-        clang_20
+        librsvg
+        libsoup_3
         lld_20
-        dotacatFast.packages.${system}.default
+        llvmPackages_20.clangUseLLVM
         lshw
         lsof
-        lvm2 # Provides LVM tools: pvcreate, vgcreate, lvcreate
-        mdadm # RAID management
+        lvm2
+        mdadm
         mdcat
-        plocate
-        cowsay
         neofetch
         nerdctl
-        nerd-fonts.fira-mono
         nerd-fonts.fira-code
+        nerd-fonts.fira-mono
         networkmanager-iodine
         networkmanager-openvpn
         networkmanager-vpnc
         nftables
-        #iptables
+        nixd
         nix-index
         nix-prefetch-git
-        nixd
+        nodejs
         nvidia-container-toolkit
+        nvim-pkg
         nvme-cli
         nvtopPackages.intel
         openssl
         openssl.dev
         pandoc
-        patool
+        pango
         parted
+        patool
         pciutils
         pkg-config
+        plocate
         podman
         podman-compose
         podman-desktop
-        expressvpn
         psmisc
         pwgen
-        pyenv
-        python312Full
         qmk
-        rootlesskit
-        rustdesk
         ripgrep
         ripgrep-all
+        rootlesskit
+        rustdesk
         seahorse
-        #servo
         signal-desktop
         simple-scan
         slirp4netns
         sqlite
         starship
         sysstat
-        #systeroid
-        trunk
-        #teams  <-- not currently supported on linux targets
+        tailwindcss
+        tealdeer
         tinyxxd
         tldr
-        tealdeer
         tmux
         tree
         tree-sitter
+        trunk
         unzip
         usbutils
         uv
-        (vscode-with-extensions.override {
-          vscodeExtensions = with vscode-extensions; [
-            bbenoist.nix
-            ms-azuretools.vscode-docker
-            dhall.vscode-dhall-lsp-server
-            dhall.dhall-lang
-          ];
-        })
         viu
         vkmark
         vulkan-tools
         vulnix
-        wasm-pack
-        wasmtime
-        wordbook
+        wasm-bindgen-cli_0_2_100
         wasmer
         wasmer-pack
-        wasm-bindgen-cli_0_2_100
+        wasm-pack
+        wasmtime
         wayland-utils
+        webkitgtk_4_1
         wget
-        wine64                                      # support 64-bit only
-        wineWowPackages.staging                     # wine-staging (version with experimental features)
-        winetricks                                  # winetricks (all versions)
-        wineWowPackages.waylandFull                 # native wayland support (unstable)
-        bottles                                     # a wine prefix UI
+        wine64
+        winetricks
+        wineWowPackages.staging
+        wineWowPackages.waylandFull
         wl-clipboard-rs
-        (hiPrio xwayland)
+        wordbook
         xbindkeys
         xbindkeys-config
         yaru-theme
         zed-editor
         zellij
         zoom-us
-
-        # However, AppArmor is a bit more fully baked:
-        # apparmor-parser
-        # libapparmor
-        # apparmor-utils
-        # apparmor-profiles
-        # apparmor-kernel-patches
-        # #roddhjav-apparmor-rules
-        # apparmor-pam
-        # apparmor-bin-utils
     ];
+
+    wrapped-portal = wrapped-portal;
 }
