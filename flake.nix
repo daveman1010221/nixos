@@ -275,11 +275,13 @@
                 {
                   ## Provide a complete templates directory that already
                   ## contains the hook – copy it so GC can’t break the path.
-                  "git-templates".source = pkgs.runCommand "git-templates" {} ''
-                    mkdir -p "$out/hooks"
-                    install -m0755 "${pkgs.commitMsgHook}/bin/commit-msg-hook" \
-                                   "$out/hooks/commit-msg"
-                  '';
+                  "git-templates" = {
+                    source = pkgs.runCommand "git-templates" {} ''
+                      mkdir -p "$out/hooks"
+                      install -m0755 "${pkgs.commitMsgHook}/bin/commit-msg-hook" \
+                                     "$out/hooks/commit-msg"
+                    '';
+                  };
                 }
               ];
 

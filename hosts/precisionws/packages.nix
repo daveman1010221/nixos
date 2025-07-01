@@ -126,6 +126,8 @@ in {
         fzf
         gdk-pixbuf
         gitFull
+        git-cliff
+        git-filter-repo
         glib
         glmark2
         glxinfo
@@ -183,6 +185,7 @@ in {
         nvim-pkg
         nvme-cli
         nvtopPackages.intel
+        ollama-cuda
         openssl
         openssl.dev
         pandoc
@@ -197,6 +200,7 @@ in {
         podman-desktop
         psmisc
         pwgen
+        python314Full
         qmk
         ripgrep
         ripgrep-all
