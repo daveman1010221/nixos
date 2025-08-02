@@ -5,10 +5,16 @@
   dotacatFast
 }:
 let
-in
-{
-    # System-wide package list
+  wrapped-portal = pkgs.writeShellScriptBin "xdg-desktop-portal-cosmic-wrapper" ''
+    export WAYLAND_DISPLAY=$(ls /run/user/$UID | grep -E '^wayland-[0-9]+$' | head -n1)
+    export XDG_SESSION_TYPE=wayland
+    export XDG_CURRENT_DESKTOP=cosmic
+    exec ${pkgs.xdg-desktop-portal-cosmic}/libexec/xdg-desktop-portal-cosmic
+  '';
+in {
     myPkgs = with pkgs; [
+        wrapped-portal
+
         (rust-bin.nightly.latest.default.override {
           targets = [ "wasm32-unknown-unknown" ];
           extensions = [ "rust-src" "rust-analyzer" ];
@@ -51,9 +57,38 @@ in
         cl-wordle
         cni-plugins
         containerd
+        cosmic-bg
+        cosmic-osd
+        cosmic-term
+        cosmic-idle
+        cosmic-edit
+        cosmic-comp
+        cosmic-store
+        cosmic-randr
+        cosmic-panel
+        cosmic-icons
+        cosmic-files
+        cosmic-player
+        cosmic-session
+        cosmic-greeter
+        cosmic-ext-ctl
+        cosmic-applets
+        cosmic-settings
+        cosmic-launcher
+        cosmic-protocols
+        cosmic-wallpapers
+        cosmic-screenshot
+        cosmic-ext-tweaks
+        cosmic-applibrary
+        cosmic-design-demo
+        cosmic-notifications
+        cosmic-ext-calculator
+        cosmic-settings-daemon
+        cosmic-workspaces-epoch
+        xdg-desktop-portal-cosmic
         cryptsetup
         cups
-        deja-dup
+        #deja-dup
         delta
         dhall
         dhall-nix
@@ -163,7 +198,7 @@ in
         psmisc
         pwgen
         pyenv
-        python312Full
+        python314Full
         qmk
         rootlesskit
         rustdesk
@@ -219,15 +254,7 @@ in
         zed-editor
         zellij
         zoom-us
-
-        # However, AppArmor is a bit more fully baked:
-        # apparmor-parser
-        # libapparmor
-        # apparmor-utils
-        # apparmor-profiles
-        # apparmor-kernel-patches
-        # #roddhjav-apparmor-rules
-        # apparmor-pam
-        # apparmor-bin-utils
     ];
+
+    wrapped-portal = wrapped-portal;
 }

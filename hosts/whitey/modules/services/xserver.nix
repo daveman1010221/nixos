@@ -9,6 +9,6 @@
     excludePackages = with hostPkgs; [ xterm ];
 
     # Load nvidia driver for Xorg and Wayland
-    videoDrivers = ["nvidia"];
+    videoDrivers = ["amdgpu"];
   };
 }

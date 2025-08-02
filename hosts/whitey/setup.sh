@@ -152,7 +152,7 @@ while read -r mapper_line; do
     mapper_device=$(echo "$mapper_line" | awk '{print $1}')
     # "No devices found" line is possible
     [[ "$mapper_device" == "No" ]] && continue
-    sudo nuke_mapper_device "$mapper_device"
+    nuke_mapper_device "$mapper_device"
 done < <(sudo dmsetup ls 2>/dev/null || echo "")
 
 # 6) Finally, wipe the partition table on the DEFAULT_BOOT drive
@@ -220,7 +220,7 @@ sudo mdadm --create --verbose /dev/md0 --level=0 --raid-devices=2 --chunk=512K /
 echo -e "\033[1;34m[INFO]\033[0m Creating LVM structure..."
 
 # 1️⃣  Create the Physical Volume
-sudo pvcreate /dev/md0 || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create Physical Volume!"; exit 1; }
+sudo pvcreate -ff /dev/md0 || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create Physical Volume!"; exit 1; }
 
 # 2️⃣  Create the Volume Group
 sudo vgcreate -s 16M nix /dev/md0 || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create Volume Group!"; exit 1; }
@@ -238,9 +238,9 @@ sudo vgdisplay nix
 sudo lvdisplay nix
 
 # 5️⃣  Format Logical Volumes with F2FS
-echo -e "\033[1;34m[INFO]\033[0m Formatting Logical Volumes with F2FS..."
+echo -e "\033[1;34m[INFO]\033[0m Formatting Logical Volumes with F2FS...",fs_verity
 sudo mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum,flexible_inline_xattr -z 512 /dev/nix/tmp  || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format tmp LV!"; exit 1; }
-sudo mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum,flexible_inline_xattr,fs_verity -z 512 /dev/nix/var  || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format var LV!"; exit 1; }
+sudo mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum,flexible_inline_xattr -z 512 /dev/nix/var  || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format var LV!"; exit 1; }
 sudo mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum,flexible_inline_xattr -z 512 /dev/nix/root || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format root LV!"; exit 1; }
 sudo mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum,flexible_inline_xattr -z 512 /dev/nix/home || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format home LV!"; exit 1; }
 
@@ -366,8 +366,8 @@ home_fs_uuid=$(findmnt -no UUID /mnt/home)
 secrets_fs_uuid=$(blkid -s UUID -o value /dev/mapper/secrets_crypt)
 
 # Get persistent device paths
-nvme0_path=$(ls -l /dev/disk/by-id/ | awk '/nvme-eui.*nvme0n1/ {print "/dev/disk/by-id/" $9}' | head -n1)
-nvme1_path=$(ls -l /dev/disk/by-id/ | awk '/nvme-eui.*nvme1n1/ {print "/dev/disk/by-id/" $9}' | head -n1)
+nvme0_path=$(ls -l /dev/disk/by-id/ | awk '/nvme-uuid.*nvme0n1/ {print "/dev/disk/by-id/" $9}' | head -n1)
+nvme1_path=$(ls -l /dev/disk/by-id/ | awk '/nvme-uuid.*nvme1n1/ {print "/dev/disk/by-id/" $9}' | head -n1)
 
 if [[ -z "$nvme0_path" || -z "$nvme1_path" ]]; then
     echo -e "\033[1;31m[ERROR]\033[0m Failed to determine NVMe device paths!"
@@ -418,8 +418,6 @@ EOF
 sudo chmod 600 "${BOOT_MOUNT}/secrets/flakey.json"
 
 ### APPLYING SYSTEM CONFIGURATION ###
-"Hard exit"
-exit 1
 
 echo -e "\033[1;34m[INFO]\033[0m Installing NixOS from flake..."
 nixos-install \

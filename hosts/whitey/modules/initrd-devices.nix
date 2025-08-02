@@ -1,10 +1,7 @@
-# hosts/whitey/initrd-devices.nix  (or separate file)
-
-{ lib, ... }:
+{ config, lib, secrets, ... }:
 
 {
   boot.initrd.luks.devices.secrets_crypt = {
-    device        = "/dev/disk/by-partuuid/…";   # your SECRETS_PARTITION
     allowDiscards = true;
     bypassWorkqueues = true;
     keyFile       = "";      # ask for passphrase on boot
