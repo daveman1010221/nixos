@@ -3,17 +3,8 @@
   boot = {
     # Configure the kernel
   
-    # This bug-checks when GDM tries to initialize the external Nvidia display,
-    # so clearly some sort of issue with the Nvidia driver and the hardened
-    # kernel. It works fine for 'on the go' config, though. Considering making two kernel configs.
-    # kernelPackages = pkgsForHost.hardened_linux_kernel;
-  
-    # kernelModules = [ "kvm-intel" ];
-  
     kernelParams = [
       "i8042.unlock"
-      # "intel_idle.max_cstate=4"
-      # "intel_iommu=on"
       #"lockdown=confidentiality"
       "mitigations=auto"
       "pci=realloc"
@@ -22,16 +13,9 @@
       "zswap.compressor=lzo"
       "zswap.enabled=1"
       "zswap.max_pool_percent=10"
-      # "modprobe.blacklist=nouveau"
       "rootfstype=f2fs"
       "nvme_core.default_ps_max_latency_us=0"
-      "fips=1"
-      # "dm_crypt.max_read_size=1048576"
-      # "dm_crypt.max_write_size=65536"
-      # "NVreg_EnableGpuFirmware=1"
-    ];
-  
-    kernelPatches = [
+      #"fips=1"
     ];
   
     kernel = {

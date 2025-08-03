@@ -142,10 +142,17 @@ echo -e "\033[1;34m[INFO]\033[0m Removing leftover device mapper entries..."
 
 function nuke_mapper_device() {
     local mapper_name="$1"
-    if dmsetup info "$mapper_name" &>/dev/null; then
-        echo -e "\033[1;33m[WARNING]\033[0m Forcing removal of /dev/mapper/$mapper_name"
-        sudo dmsetup remove -f "$mapper_name" || true
-    fi
+
+    echo -e "\033[1;34m[INFO]\033[0m Nuking mapper device: $mapper_name"
+
+    # Lazy unmount anything using it
+    sudo umount -Rl "/dev/mapper/${mapper_name}" 2>/dev/null || true
+
+    # Try to close cryptsetup if it's a LUKS mapping
+    sudo cryptsetup luksClose "$mapper_name" 2>/dev/null || true
+
+    # Try to forcibly remove the mapper node
+    sudo dmsetup remove -f "$mapper_name" 2>/dev/null || true
 }
 
 while read -r mapper_line; do
@@ -205,13 +212,31 @@ sudo openssl rand -out ${KEYS_DIR}/nvme.key 64
 sudo chmod 400 ${KEYS_DIR}/nvme.key
 
 ### CREATING RAID-0 ###
-if [ -e /dev/md0 ]; then
-    echo -e "\033[1;34m[INFO]\033[0m Stopping existing RAID-0 array..."
-    sudo mdadm --stop /dev/md0 || true
-    sudo mdadm --remove /dev/md0 || true
-    sudo wipefs -a /dev/md0 || true
-    sudo mdadm --zero-superblock /dev/${BLOCK_01} /dev/${BLOCK_02} || true
-fi
+echo -e "\033[1;34m[INFO]\033[0m Forcibly stopping and wiping any md0 and RAID signatures..."
+
+# Stop and remove md0 whether it looks alive or not
+sudo mdadm --stop /dev/md0 || true
+sudo mdadm --remove /dev/md0 || true
+
+# Delete node if still lingering
+[ -b /dev/md0 ] && sudo rm -f /dev/md0 || true
+
+# Blow away RAID metadata and partition tables on both drives
+for dev in /dev/${BLOCK_01} /dev/${BLOCK_02}; do
+    echo -e "\033[1;34m[INFO]\033[0m Zeroing superblock and wiping fs signatures on $dev..."
+    sudo mdadm --zero-superblock "$dev" || true
+    sudo wipefs -a "$dev" || true
+done
+
+# Wait for md0 to truly die, up to 5 seconds
+for i in {1..5}; do
+    if [ -e /dev/md0 ]; then
+        echo -e "\033[1;33m[WAITING]\033[0m md0 still present... waiting 1s"
+        sleep 1
+    else
+        break
+    fi
+done
 
 echo -e "\033[1;34m[INFO]\033[0m Creating RAID-0 array..."
 sudo mdadm --create --verbose /dev/md0 --level=0 --raid-devices=2 --chunk=512K /dev/${BLOCK_01} /dev/${BLOCK_02}
