@@ -12,50 +12,45 @@
     "nvme" "xhci_pci" "ahci" "thunderbolt" "usb_storage" "usbhid" "sd_mod"
     "trusted" "encrypted_keys" "tpm" "tpm_crb" "tpm_tis" "key_type_trusted" "key_type_encrypted"
   ];
-  boot.initrd.kernelModules = [ "dm-snapshot" ];
   boot.kernelModules = [ "kvm-amd" ];
   boot.extraModulePackages = [ ];
 
   fileSystems."/" =
-    { device = "/dev/disk/by-uuid/1db27bbc-1664-4514-af39-eb5b4c33c42b";
+    { device = "/dev/disk/by-uuid/9cd8a7ab-5284-42b2-b311-d90a8c3ea688";
       fsType = "f2fs";
     };
 
   fileSystems."/tmp" =
-    { device = "/dev/disk/by-uuid/5ff6ab3a-cc58-4aff-a8bb-385158b232f9";
+    { device = "/dev/disk/by-uuid/924083f6-e402-4104-9c4f-4e33985d1bbe";
       fsType = "f2fs";
     };
 
   fileSystems."/var" =
-    { device = "/dev/disk/by-uuid/3b4706b4-cdbc-4a56-8dc2-2593997e3202";
+    { device = "/dev/disk/by-uuid/c022dacd-a1c3-4396-bbfe-a6e921623c03";
       fsType = "f2fs";
     };
 
   fileSystems."/home" =
-    { device = "/dev/disk/by-uuid/f7735ca8-86f4-4ac8-b2aa-7d54c577d0bf";
+    { device = "/dev/disk/by-uuid/fd16f42b-ed0f-4b7a-b631-8b3de3041b22";
       fsType = "f2fs";
     };
 
   fileSystems."/boot" =
-    { device = "/dev/disk/by-uuid/f2a36823-f7f9-4219-bab9-56abf6ef42a9";
+    { device = "/dev/disk/by-uuid/5b92e829-7333-4602-9849-f82a645478f7";
       fsType = "ext4";
     };
 
   fileSystems."/boot/EFI" =
-    { device = "/dev/disk/by-uuid/3D46-5D16";
+    { device = "/dev/disk/by-uuid/31F1-0CF6";
       fsType = "vfat";
       options = [ "fmask=0022" "dmask=0022" ];
     };
 
-  fileSystems."/secrets" =
-    { device = "/dev/disk/by-uuid/f0d0cb95-b5d4-4ecf-84e5-44ad9144f04b";
-      fsType = "ext4";
-    };
 
-  boot.initrd.luks.devices."secrets_crypt".device = "/dev/disk/by-uuid/7957c102-099b-403c-b15e-487e5c3cc052";
+  boot.initrd.luks.devices."secrets_crypt".device = "/dev/disk/by-uuid/d3271a76-9608-4580-a6c2-d5f0399f0fd5";
 
   swapDevices =
-    [ { device = "/dev/disk/by-uuid/1bc7a795-732b-4115-8f65-d8a3d87863a1"; }
+    [ { device = "/dev/disk/by-uuid/4710fa88-f7f7-4313-b1aa-21af96fff1bc"; }
     ];
 
   # Enables DHCP on each ethernet and wireless interface. In case of scripted networking
@@ -72,4 +67,5 @@
   hardware.enableAllHardware = true;
   hardware.graphics.enable = true;
   hardware.keyboard.qmk.enable = true;
+
 }

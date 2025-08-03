@@ -109,30 +109,38 @@ if mount | grep -q "/mnt/boot "; then
     sudo umount /mnt/boot || umount -l /mnt/boot || true
 fi
 
-# 3) Remove LVM logical volumes and the volume group
-#    You have LVs named nix-root, nix-home, etc. So let's just remove them all
-#    forcibly, then remove the VG itself.
+# 3) Remove LVM volumes and volume groups sitting on any mdadm device
+echo -e "\033[1;34m[INFO]\033[0m Removing LVM volumes & volume groups from RAID devices..."
 
-echo -e "\033[1;34m[INFO]\033[0m Removing LVM volumes & volume group..."
-if vgs nix &>/dev/null; then
-    # Remove all logical volumes in the "nix" VG
-    sudo lvremove -fy nix || true
+for md in /dev/md*; do
+    if [ -b "$md" ]; then
+        vgs_output=$(sudo pvs --noheadings -o vg_name "$md" 2>/dev/null | awk '{$1=$1};1')
+        if [[ -n "$vgs_output" ]]; then
+            for vg in $vgs_output; do
+                echo -e "\033[1;34m[INFO]\033[0m Removing VG $vg and all its LVs..."
+                sudo lvremove -fy "$vg" || true
+                sudo vgremove -fy "$vg" || true
+            done
+        fi
+        echo -e "\033[1;34m[INFO]\033[0m Attempting to remove PV from $md..."
+        sudo pvremove -ff -y "$md" || true
+    fi
+done
 
-    # Remove the "nix" volume group entirely
-    sudo vgremove -fy nix || true
-fi
+# 4) Stop and clean up all active mdadm RAID arrays
+echo -e "\033[1;34m[INFO]\033[0m Stopping and wiping all mdadm arrays..."
 
-# 4) Stop and remove ANY active mdadm RAID arrays (like /dev/md0)
-echo -e "\033[1;34m[INFO]\033[0m Stopping RAID arrays..."
 sudo mdadm --stop --scan || true
+for md in /dev/md*; do
+    [ -b "$md" ] || continue
+    sudo mdadm --stop "$md" 2>/dev/null || true
+    sudo mdadm --remove "$md" 2>/dev/null || true
+done
 
-# Double-check each /dev/md* in case it didn't get removed
-for array in $(ls /dev/md* 2>/dev/null || true); do
-    sudo mdadm --stop "$array"   2>/dev/null || true
-    sudo mdadm --remove "$array" 2>/dev/null || true
-    # Also zero superblock if it’s still recognized as an MD device
-    sudo mdadm --zero-superblock "$array" 2>/dev/null || true
-    sudo wipefs -a "$array"      2>/dev/null || true
+for dev in /dev/nvme0n1 /dev/nvme1n1; do
+    echo -e "\033[1;34m[INFO]\033[0m Zeroing superblock and wiping $dev..."
+    sudo mdadm --zero-superblock "$dev" || true
+    sudo wipefs -a "$dev" || true
 done
 
 # 5) Close or remove ANY leftover device mapper nodes because now LVM and RAID
@@ -373,7 +381,27 @@ echo -e "\033[1;34m[INFO]\033[0m Copying NixOS flake repo to its official destin
 sudo cp -r /home/nixos/nixos /mnt/etc
 
 echo -e "\033[1;34m[INFO]\033[0m Moving the hardware configuration to the host-specific path in the repo..."
-mv /mnt/etc/nixos/hardware-configuration.nix /mnt/etc/nixos/hosts/$HOSTNAME/hardware-configuration.nix
+mv /mnt/etc/nixos/hardware-configuration.nix /mnt/etc/nixos/hosts/$HOSTNAME/hardware.nix
+
+HWC_PATH="/mnt/etc/nixos/hosts/$HOSTNAME/hardware.nix"
+
+# 🔩 Add required kernel modules if not already present
+echo -e "\033[1;34m[INFO]\033[0m Injecting required initrd kernel modules..."
+sed -i '/boot\.initrd\.availableKernelModules = \[/,/];/c\
+  boot.initrd.availableKernelModules = [\
+    "nvme" "xhci_pci" "ahci" "thunderbolt" "usb_storage" "usbhid" "sd_mod"\
+    "trusted" "encrypted_keys" "tpm" "tpm_crb" "tpm_tis" "key_type_trusted" "key_type_encrypted"\
+  ];' "$HWC_PATH"
+
+# 🧠 Enable firmware, hardware, graphics, and QMK support
+echo -e "\033[1;34m[INFO]\033[0m Enabling firmware and QMK keyboard support..."
+sed -i '/^}/i\
+  hardware.enableAllFirmware = true;\
+  hardware.enableAllHardware = true;\
+  hardware.graphics.enable = true;\
+  hardware.keyboard.qmk.enable = true;\
+' "$HWC_PATH"
+
 mv /mnt/etc/nixos/configuration.nix /mnt/etc/nixos/configuration.nix.installer
 
 echo -e "\033[1;34m[INFO]\033[0m Extracting hardware-specific details for flake configuration..."
@@ -401,8 +429,7 @@ if [[ -z "$nvme0_path" || -z "$nvme1_path" ]]; then
 fi
 
 # Validate extracted values against hardware-configuration.nix
-HWC_PATH="/mnt/etc/nixos/hosts/$HOSTNAME/hardware-configuration.nix"
-echo -e "\033[1;34m[INFO]\033[0m Verifying extracted values exist in hardware-configuration.nix..."
+echo -e "\033[1;34m[INFO]\033[0m Verifying extracted values exist in hardware.nix..."
 
 MISSING_VALUES=0
 check_value "$boot_uuid" "Boot UUID"
@@ -415,6 +442,10 @@ if [[ $MISSING_VALUES -gt 0 ]]; then
     echo "Please check hardware-configuration.nix and ensure all required values are present."
     exit 1
 fi
+
+# 🧼 Remove /secrets mount entry to avoid early-stage mount issues
+echo -e "\033[1;34m[INFO]\033[0m Removing /secrets filesystem entry from hardware.nix..."
+sed -i '/fileSystems\."\/secrets"/,/^\s*};/d' "$HWC_PATH"
 
 echo -e "\033[1;34m[INFO]\033[0m Writing ${BOOT_MOUNT}/secrets/flakey.json ..."
 
