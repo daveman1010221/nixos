@@ -10,7 +10,6 @@
 
   boot.initrd.availableKernelModules = [
     "nvme" "xhci_pci" "ahci" "thunderbolt" "usb_storage" "usbhid" "sd_mod"
-    "trusted" "encrypted_keys" "tpm" "tpm_crb" "tpm_tis" "key_type_trusted" "key_type_encrypted"
   ];
   boot.kernelModules = [ "kvm-amd" ];
   boot.extraModulePackages = [ ];

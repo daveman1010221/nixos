@@ -42,7 +42,7 @@ let
 in {
   boot.initrd.systemd.enable = true;
 
-  boot.initrd.systemd.units."nvme-hw-key" = {
+  boot.initrd.systemd.units."nvme-hw-key.service" = {
     enable = true;
     wantedBy = [ "initrd.target" ];
     text = ''

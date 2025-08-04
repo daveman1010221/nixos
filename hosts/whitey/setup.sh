@@ -386,12 +386,12 @@ mv /mnt/etc/nixos/hardware-configuration.nix /mnt/etc/nixos/hosts/$HOSTNAME/hard
 HWC_PATH="/mnt/etc/nixos/hosts/$HOSTNAME/hardware.nix"
 
 # 🔩 Add required kernel modules if not already present
-echo -e "\033[1;34m[INFO]\033[0m Injecting required initrd kernel modules..."
-sed -i '/boot\.initrd\.availableKernelModules = \[/,/];/c\
-  boot.initrd.availableKernelModules = [\
-    "nvme" "xhci_pci" "ahci" "thunderbolt" "usb_storage" "usbhid" "sd_mod"\
-    "trusted" "encrypted_keys" "tpm" "tpm_crb" "tpm_tis" "key_type_trusted" "key_type_encrypted"\
-  ];' "$HWC_PATH"
+#echo -e "\033[1;34m[INFO]\033[0m Injecting required initrd kernel modules..."
+#sed -i '/boot\.initrd\.availableKernelModules = \[/,/];/c\
+  #boot.initrd.availableKernelModules = [\
+    #"nvme" "xhci_pci" "ahci" "thunderbolt" "usb_storage" "usbhid" "sd_mod"\
+    #"trusted" "encrypted_keys" "tpm" "tpm_crb" "tpm_tis" "key_type_trusted" "key_type_encrypted"\
+  #];' "$HWC_PATH"
 
 # 🧠 Enable firmware, hardware, graphics, and QMK support
 echo -e "\033[1;34m[INFO]\033[0m Enabling firmware and QMK keyboard support..."
