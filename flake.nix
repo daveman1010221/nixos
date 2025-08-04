@@ -383,6 +383,7 @@
               enable = true;
             };
             security = {
+              tpm2.applyUdevRules = true;
               # The "audit sub-system" must be enabled as a separate option from the
               # "audit sub-system's daemon", which is necessary to have a fucking audit
               # sub-system.
@@ -556,6 +557,7 @@
             };
 
             systemd = {
+              tpm2.enable = false;
               # Override the auditd systemd service, so that we can actually configured
               # the daemon.
               # services.auditd = {

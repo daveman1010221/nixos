@@ -46,7 +46,7 @@
     };
 
 
-  boot.initrd.luks.devices."secrets_crypt".device = "/dev/disk/by-uuid/d3271a76-9608-4580-a6c2-d5f0399f0fd5";
+  # boot.initrd.luks.devices."secrets_crypt".device = "/dev/disk/by-uuid/d3271a76-9608-4580-a6c2-d5f0399f0fd5";
 
   swapDevices =
     [ { device = "/dev/disk/by-uuid/4710fa88-f7f7-4313-b1aa-21af96fff1bc"; }

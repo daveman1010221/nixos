@@ -1,6 +1,14 @@
 { pkgsForHost, ... }:
 {
   boot = {
+    blacklistedKernelModules = [
+      "tpm"
+      "tpm_crb"
+      "tpm_tis"
+      "tpm_tis_core"
+      "trusted"
+    ];
+
     # Configure the kernel
   
     kernelParams = [
