@@ -98,12 +98,14 @@ in
       ${mount} -o ro /dev/mapper/secrets_crypt /tmp/boot
 
       echo "[nvme-hw-key] Staging key in tmpfs"
-      mkdir -p ${mountPoint}/keys
+      mkdir -p ${mountPoint}
       ${mount} -t tmpfs -o size=10M,mode=0700 tmpfs ${mountPoint}
+      mkdir -p ${mountPoint}/keys
 
       echo "[nvme-hw-key] Copying nvme.key"
-      ${cp} /tmp/boot/keys/nvme.key ${keyFile}
-      ${chmodBin} 400 ${keyFile}
+      [ -f /tmp/boot/keys/nvme.key ] || { echo "nvme.key missing in secrets volume"; exit 1; }
+      ${pkgs.coreutils}/bin/install -D -m 0400 /tmp/boot/keys/nvme.key ${keyFile}
+
       ${syncBin}
 
       echo "[nvme-hw-key] Unmounting and closing secrets_crypt"
