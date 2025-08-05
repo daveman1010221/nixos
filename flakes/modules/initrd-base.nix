@@ -10,6 +10,9 @@
   
       # Ensure the initrd includes necessary modules for encryption, RAID, and filesystems
       availableKernelModules = lib.mkForce [
+        "encrypted_keys"
+        "trusted"
+
         "nls_cp437"
         "nls_iso8859_1"
         "crypto_null"

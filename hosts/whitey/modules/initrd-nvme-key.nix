@@ -12,8 +12,11 @@ let
 
   # systemd device unit for the block path (so our unit waits for the node)
   # e.g. /dev/disk/by-uuid/XXXX -> dev-disk-by\x2duuid-XXXX.device
-  devPath = lib.removePrefix "/dev/" secretsDev;
-  devUnit = "dev-" + (lib.escapeSystemdPath devPath) + ".device";
+  devPath  = lib.removePrefix "/dev/" secretsDev;
+  # First escape original hyphens, THEN turn '/' into '-' so only original '-' get escaped.
+  devEscHy = lib.replaceStrings [ "-" ] [ "\\x2d" ] devPath;
+  devEsc   = lib.replaceStrings [ "/" ] [ "-" ] devEscHy;
+  devUnit  = "dev-" + devEsc + ".device";
 
   # absolute store paths (so the script never relies on $PATH)
   cryptsetup = "${pkgs.cryptsetup}/bin/cryptsetup";
@@ -24,6 +27,7 @@ let
   shred      = "${pkgs.coreutils}/bin/shred";
   cp         = "${pkgs.coreutils}/bin/cp";
   chmodBin   = "${pkgs.coreutils}/bin/chmod";
+  modprobe   = "${pkgs.kmod}/bin/modprobe";
   syncBin    = "${pkgs.coreutils}/bin/sync";
 in
 {
@@ -52,14 +56,24 @@ in
     # keep $PATH convenience (but script uses absolute paths anyway)
     path = with pkgs; [ bash coreutils util-linux cryptsetup nvme-cli kmod systemd ];
 
-    serviceConfig.Type = "oneshot";
+    serviceConfig = {
+      Type = "oneshot";
+      # Make sure it’s truly early-boot and not pulling in defaults
+      # that might reorder us behind mounts/fsck.
+      StandardOutput = "journal+console";
+      StandardError  = "journal+console";
+    };
+    unitConfig.DefaultDependencies = false;
 
     script = ''
       #!${pkgs.bash}/bin/bash
       set -euo pipefail
 
-      # Ensure dm-crypt is live even if modules-load raced us
-      ${pkgs.kmod}/bin/modprobe dm-crypt || true
+      # Ensure the dm + crypto stack is live even if we race module load
+      ${modprobe} -ab dm_mod || true
+      ${modprobe} -ab encrypted_keys trusted || true
+      ${modprobe} -ab xts aesni_intel gf128mul crypto_simd sha256 essiv || true
+      ${modprobe} -ab dm_crypt || true
 
       # wait up to ~7.5 s for the LUKS device symlink to appear
       for i in {1..15}; do

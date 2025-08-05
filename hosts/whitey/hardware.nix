@@ -11,7 +11,25 @@
   boot.initrd.availableKernelModules = [
     "nvme" "xhci_pci" "ahci" "thunderbolt" "usb_storage" "usbhid" "sd_mod"
   ];
-  boot.kernelModules = [ "kvm-amd" ];
+  boot.initrd.kernelModules = [
+    "kvm-amd"
+    # device-mapper
+    "dm_mod"
+    "dm_crypt"
+
+    # crypto transforms needed by encrypted_keys/dm-crypt (cbc(aes), xts(aes))
+    "aesni_intel"
+    "crypto_simd"
+    "gf128mul"
+    "cryptd"
+    "cbc"                 # <-- you were missing this
+    "xts"
+    "sha256_generic"      # <-- use the real module name, not "sha256"
+
+    # only if you *really* need keyring helpers in initrd:
+    "encrypted_keys"
+    "trusted"
+  ];
   boot.extraModulePackages = [ ];
 
   fileSystems."/" =
