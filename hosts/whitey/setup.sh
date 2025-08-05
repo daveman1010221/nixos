@@ -1,6 +1,8 @@
 #!/run/current-system/sw/bin/bash
 
 set -euo pipefail  # Safer script execution
+shopt -s lastpipe
+export LC_ALL=C
 
 ### FUNCTIONS
 function confirm() {
@@ -10,6 +12,184 @@ function confirm() {
         echo "Aborting."
         exit 1
     fi
+}
+
+# ────────────────────────────────────────────────────────────────
+# NVMe SED helper functions (no heredocs; inline expect)
+# ────────────────────────────────────────────────────────────────
+
+# Reads passphrase from ${KEYS_DIR}/nvme.key (created later)
+sed_load_key() {
+    SED_KEY="$(sudo tr -d '\n' < "${KEYS_DIR}/nvme.key")"
+    if [[ -z "${SED_KEY:-}" ]]; then
+        echo -e "\033[1;31m[ERROR]\033[0m nvme.key is empty or missing"
+        return 1
+    fi
+}
+
+# Initialize Opal on a namespace (prompts for *new* password)
+sed_initialize() {
+    local dev="$1"
+    sed_load_key
+    echo -e "\033[1;34m[INFO]\033[0m Initializing Opal on ${dev}..."
+    expect -c "
+        set timeout 60
+        spawn sudo nvme sed initialize $dev
+        # Different firmwares prompt differently; answer any password/key prompts twice if asked.
+        expect {
+          -re {(?i)pass(word)?|key.*:} { send -- \"${SED_KEY}\r\"; exp_continue }
+          eof
+        }
+    "
+}
+
+# Unlock (needs existing password)
+sed_unlock() {
+    local dev="$1"
+    sed_load_key
+    echo -e "\033[1;34m[INFO]\033[0m Unlocking ${dev}..."
+    expect -c "
+        set timeout 30
+        spawn sudo nvme sed unlock $dev --ask-key
+        expect -re {(?i)pass(word)?|key.*:} { send -- \"${SED_KEY}\r\" }
+        expect eof
+    "
+}
+
+# Lock the drive (requires current password)
+sed_lock() {
+    local dev="$1"
+    sed_load_key
+    echo -e "\033[1;34m[INFO]\033[0m Locking ${dev}..."
+    expect -c "
+        set timeout 30
+        spawn sudo nvme sed lock $dev --ask-key
+        expect -re {(?i)pass(word)?|key.*:} { send -- \"${SED_KEY}\r\" }
+        expect eof
+    "
+}
+
+# Revert a drive out of Opal state.
+# mode: 'normal' (no flags), 'destructive' (--destructive), or 'psid' (--psid; will prompt for PSID).
+sed_revert() {
+    local dev="$1"
+    local mode="$2"
+    echo -e "\033[1;33m[WARN]\033[0m Reverting ${dev} from Opal state (mode=${mode})..."
+    case "$mode" in
+      normal)
+        sudo nvme sed revert "$dev"
+        ;;
+      destructive)
+        sudo nvme sed revert "$dev" --destructive
+        ;;
+      psid)
+        read -rp "Enter PSID for ${dev} (printed on drive label, no dashes): " PSID
+        if [[ -z "$PSID" ]]; then
+            echo -e "\033[1;31m[ERROR]\033[0m PSID required for PSID revert."
+            return 1
+        fi
+        # Some builds of nvme-cli will prompt; drive it with expect just in case.
+        expect -c "
+            set timeout 90
+            spawn sudo nvme sed revert $dev --psid
+            expect {
+              -re {(?i)psid.*:} { send -- \"${PSID}\r\"; exp_continue }
+              eof
+            }
+        "
+        ;;
+      *)
+        echo -e "\033[1;31m[ERROR]\033[0m Unknown revert mode: $mode"
+        return 1
+        ;;
+    esac
+}
+
+# Minimal runtime cleanup so kernel state is sane before/after SED ops
+runtime_sanity() {
+    echo -e "\033[1;34m[INFO]\033[0m Preparing runtime state (swapoff, unmounts, md/dm cleanup)…"
+    sudo swapoff -a 2>/dev/null || true
+    sudo umount -R /mnt 2>/dev/null || sudo umount -lR /mnt 2>/dev/null || true
+    sudo umount /mnt/boot/EFI 2>/dev/null || true
+    sudo umount /mnt/boot 2>/dev/null || true
+    sudo mdadm --stop --scan 2>/dev/null || true
+    for md in /dev/md/* /dev/md*; do
+      [ -b "$md" ] || continue
+      sudo mdadm --stop "$md" 2>/dev/null || true
+      sudo mdadm --remove "$md" 2>/dev/null || true
+    done
+    for map in $(sudo dmsetup ls 2>/dev/null | awk '{print $1}'); do
+      sudo dmsetup remove -f "$map" 2>/dev/null || true
+    done
+    sudo partprobe /dev/nvme0n1 2>/dev/null || true
+    sudo partprobe /dev/nvme1n1 2>/dev/null || true
+    sudo udevadm settle || true
+}
+
+# Assert Opal is enabled and currently unlocked on a device
+sed_assert_enabled_unlocked() {
+    local dev="$1"
+    local out enabled locked
+    out="$(sudo nvme sed discover "$dev" 2>/dev/null || true)"
+    enabled="$(echo "$out" | awk -F: '/Locking Feature Enabled/{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')"
+    locked="$(echo "$out" | awk -F: '/^[[:space:]]*Locked/{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')"
+    if [[ "$enabled" != "Yes" ]]; then
+        echo -e "\033[1;31m[ERROR]\033[0m ${dev}: Locking Feature Enabled != Yes after initialize"; exit 1
+    fi
+    if [[ "$locked" != "No" ]]; then
+        echo -e "\033[1;31m[ERROR]\033[0m ${dev}: drive is locked unexpectedly"; exit 1
+    fi
+}
+
+# Query and return 'Yes'/'No' for Locking Feature Enabled
+sed_enabled() {
+    local dev="$1"
+    local out
+    out="$(sudo nvme sed discover "$dev" 2>/dev/null || true)"
+    val="$(echo "$out" | awk -F: '/Locking Feature Enabled/{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')"
+    [[ -z "$val" ]] && echo "Unknown" || echo "$val"
+}
+
+# Full reset+init flow for one namespace:
+#  - Always try destructive revert (hardware crypto-wipe). If it fails and Opal
+#    was previously enabled, offer PSID revert; otherwise continue.
+#  - Initialize (sets password via prompt to our key).
+#  - Verify lock+unlock; leave unlocked.
+sed_reset_and_init() {
+    local dev="$1"
+    local en
+    en=$(sed_enabled "$dev" || echo "Unknown")
+
+    echo -e "\033[1;34m[INFO]\033[0m Checking SED state for ${dev} (Enabled: ${en})"
+    echo -e "\033[1;34m[INFO]\033[0m Attempting hardware crypto-wipe (destructive revert) on ${dev}…"
+    if ! sed_revert "$dev" destructive; then
+        if [[ "$en" == "Yes" ]]; then
+            echo -e "\033[1;33m[WARN]\033[0m Destructive revert failed and Opal was enabled; offering PSID revert."
+            sed_revert "$dev" psid
+        else
+            echo -e "\033[1;33m[WARN]\033[0m Destructive revert not supported/failed on ${dev}; continuing."
+        fi
+    fi
+    # Reset controller node after revert so the kernel forgets stale state
+    sudo nvme reset "${dev%%n*}" 2>/dev/null || true; sudo udevadm settle || true
+
+    # Initialize and set password
+    sed_initialize "$dev"
+
+    # Some firmware needs a moment to settle before state reflects correctly
+    sudo udevadm settle || true; sleep 0.5
+
+    # Must report enabled after init
+    sed_assert_enabled_unlocked "$dev"
+
+    # Verification: lock then unlock using our key, leave unlocked
+    echo -e "\033[1;34m[INFO]\033[0m Verifying lock/unlock on ${dev}…"
+    sed_lock "$dev" || { echo -e "\033[1;31m[ERROR]\033[0m Failed to lock ${dev}"; exit 1; }
+    sed_unlock "$dev" || { echo -e "\033[1;31m[ERROR]\033[0m Failed to unlock ${dev} after locking"; exit 1; }
+
+    echo -e "\033[1;34m[INFO]\033[0m Post-verification SED state for ${dev}:"
+    sed_assert_enabled_unlocked "$dev"
+    sudo nvme sed discover "$dev" || true
 }
 
 function check_command() {
@@ -57,7 +237,6 @@ confirm "Is this the correct drive? This will ERASE and REINSTALL your system! T
 
 BLOCK_01="nvme0n1"
 BLOCK_02="nvme1n1"
-DEV_BLOCKS=("${BLOCK_01}" "${BLOCK_02}")
 BOOT_MOUNT="/mnt/boot"
 SECRETS_MOUNT="/mnt/secrets"
 EFI_PARTITION="${DEFAULT_BOOT}1"
@@ -67,8 +246,6 @@ DATA_PARTITION="${DEFAULT_BOOT}4"
 
 # keys will live on the encrypted /secrets partition
 KEYS_DIR="${SECRETS_MOUNT}/keys"
-
-NIXOS_REPO="https://github.com/daveman1010221/nixos.git"
 
 # Ensure OpenSSL is installed
 if ! command -v openssl &>/dev/null; then
@@ -81,101 +258,14 @@ fi
 
 ### PRE-FLIGHT CHECKS
 echo -e "\033[1;34m[INFO]\033[0m Checking required commands..."
-for cmd in openssl parted mdadm pvcreate vgcreate lvcreate mkfs.ext4 mkfs.f2fs mkfs.vfat git; do
+for cmd in openssl parted mdadm pvcreate vgcreate lvcreate mkfs.ext4 mkfs.f2fs mkfs.vfat git nvme expect dmsetup; do
     check_command "$cmd"
 done
 
-### CLEANUP ANY PARTIAL STATE ###
-echo -e "\033[1;34m[INFO]\033[0m Ensuring all partitions and RAID devices are released..."
+### RUNTIME SANITY (compact) ###
+runtime_sanity
 
-# 1) Turn off all swap, if any
-echo -e "\033[1;34m[INFO]\033[0m Turning off swap (if active)..."
-sudo swapoff -a || true
-
-# 2) Unmount everything under /mnt (including nested mounts like /mnt/boot, /mnt/boot/EFI, etc.)
-echo -e "\033[1;34m[INFO]\033[0m Unmounting all filesystems from /mnt..."
-if mount | grep -q "/mnt/"; then
-    sudo umount -R /mnt || {
-        echo -e "\033[1;33m[WARNING]\033[0m Some /mnt submounts may still be busy. Forcing lazy unmount..."
-        sudo umount -lR /mnt || true
-    }
-fi
-
-# If your script sometimes mounts /mnt/boot or /mnt/boot/EFI separately, unmount them, too:
-if mount | grep -q "/mnt/boot/EFI"; then
-    sudo umount /mnt/boot/EFI || umount -l /mnt/boot/EFI || true
-fi
-if mount | grep -q "/mnt/boot "; then
-    sudo umount /mnt/boot || umount -l /mnt/boot || true
-fi
-
-# 3) Remove LVM volumes and volume groups sitting on any mdadm device
-echo -e "\033[1;34m[INFO]\033[0m Removing LVM volumes & volume groups from RAID devices..."
-
-for md in /dev/md*; do
-    if [ -b "$md" ]; then
-        vgs_output=$(sudo pvs --noheadings -o vg_name "$md" 2>/dev/null | awk '{$1=$1};1')
-        if [[ -n "$vgs_output" ]]; then
-            for vg in $vgs_output; do
-                echo -e "\033[1;34m[INFO]\033[0m Removing VG $vg and all its LVs..."
-                sudo lvremove -fy "$vg" || true
-                sudo vgremove -fy "$vg" || true
-            done
-        fi
-        echo -e "\033[1;34m[INFO]\033[0m Attempting to remove PV from $md..."
-        sudo pvremove -ff -y "$md" || true
-    fi
-done
-
-# 4) Stop and clean up all active mdadm RAID arrays
-echo -e "\033[1;34m[INFO]\033[0m Stopping and wiping all mdadm arrays..."
-
-sudo mdadm --stop --scan || true
-for md in /dev/md*; do
-    [ -b "$md" ] || continue
-    sudo mdadm --stop "$md" 2>/dev/null || true
-    sudo mdadm --remove "$md" 2>/dev/null || true
-done
-
-for dev in /dev/nvme0n1 /dev/nvme1n1; do
-    echo -e "\033[1;34m[INFO]\033[0m Zeroing superblock and wiping $dev..."
-    sudo mdadm --zero-superblock "$dev" || true
-    sudo wipefs -a "$dev" || true
-done
-
-# 5) Close or remove ANY leftover device mapper nodes because now LVM and RAID
-# are gone, they should not be "busy" anymore.
-
-echo -e "\033[1;34m[INFO]\033[0m Removing leftover device mapper entries..."
-
-function nuke_mapper_device() {
-    local mapper_name="$1"
-
-    echo -e "\033[1;34m[INFO]\033[0m Nuking mapper device: $mapper_name"
-
-    # Lazy unmount anything using it
-    sudo umount -Rl "/dev/mapper/${mapper_name}" 2>/dev/null || true
-
-    # Try to close cryptsetup if it's a LUKS mapping
-    sudo cryptsetup luksClose "$mapper_name" 2>/dev/null || true
-
-    # Try to forcibly remove the mapper node
-    sudo dmsetup remove -f "$mapper_name" 2>/dev/null || true
-}
-
-while read -r mapper_line; do
-    mapper_device=$(echo "$mapper_line" | awk '{print $1}')
-    # "No devices found" line is possible
-    [[ "$mapper_device" == "No" ]] && continue
-    nuke_mapper_device "$mapper_device"
-done < <(sudo dmsetup ls 2>/dev/null || echo "")
-
-# 6) Finally, wipe the partition table on the DEFAULT_BOOT drive
-echo -e "\033[1;34m[INFO]\033[0m Wiping partition table on ${DEFAULT_BOOT}..."
-for i in {1..3}; do
-    sudo wipefs -a "${DEFAULT_BOOT}" || true
-done
-sudo partprobe "${DEFAULT_BOOT}" || echo "Reboot may be required."
+echo -e "\033[1;34m[INFO]\033[0m Proceeding with SED hardware crypto-wipe & init before provisioning…"
 
 ### PARTITIONING ###
 echo -e "\033[1;34m[INFO]\033[0m Partitioning ${DEFAULT_BOOT}..."
@@ -214,29 +304,31 @@ sudo mkfs.ext4  /dev/mapper/secrets_crypt
 sudo mkdir -p   ${SECRETS_MOUNT}
 sudo mount      /dev/mapper/secrets_crypt ${SECRETS_MOUNT}
 
-# This is the hardware encryption key. This can be multiple keys. Keeping it simple for now.
-sudo mkdir -p ${KEYS_DIR}
-sudo openssl rand -out ${KEYS_DIR}/nvme.key 64
-sudo chmod 400 ${KEYS_DIR}/nvme.key
+# ────────────────────────────────────────────────────────────────
+# Create/keep SED passphrase & (optionally) reset pre-encrypted drives
+# ────────────────────────────────────────────────────────────────
+sudo mkdir -p "${KEYS_DIR}"
+# 24-byte random, base64 (~32 chars). Regenerate only if missing.
+if [[ ! -f "${KEYS_DIR}/nvme.key" ]]; then
+  echo -e "\033[1;34m[INFO]\033[0m Generating SED passphrase (Base64, 24 bytes)…"
+  sudo openssl rand -base64 24 | sudo tee "${KEYS_DIR}/nvme.key" >/dev/null
+  sudo chmod 0400 "${KEYS_DIR}/nvme.key"
+  sync
+else
+  echo -e "\033[1;33m[WARN]\033[0m ${KEYS_DIR}/nvme.key already exists; reusing."
+fi
+
+# Hardware crypto-wipe + initialize + verify lock/unlock on both namespaces
+for dev in "/dev/${BLOCK_01}" "/dev/${BLOCK_02}"; do
+  sed_reset_and_init "$dev"
+done
 
 ### CREATING RAID-0 ###
-echo -e "\033[1;34m[INFO]\033[0m Forcibly stopping and wiping any md0 and RAID signatures..."
 
-# Stop and remove md0 whether it looks alive or not
+echo -e "\033[1;34m[INFO]\033[0m Ensuring no stale md0 is present..."
 sudo mdadm --stop /dev/md0 || true
 sudo mdadm --remove /dev/md0 || true
 
-# Delete node if still lingering
-[ -b /dev/md0 ] && sudo rm -f /dev/md0 || true
-
-# Blow away RAID metadata and partition tables on both drives
-for dev in /dev/${BLOCK_01} /dev/${BLOCK_02}; do
-    echo -e "\033[1;34m[INFO]\033[0m Zeroing superblock and wiping fs signatures on $dev..."
-    sudo mdadm --zero-superblock "$dev" || true
-    sudo wipefs -a "$dev" || true
-done
-
-# Wait for md0 to truly die, up to 5 seconds
 for i in {1..5}; do
     if [ -e /dev/md0 ]; then
         echo -e "\033[1;33m[WAITING]\033[0m md0 still present... waiting 1s"
@@ -271,7 +363,7 @@ sudo vgdisplay nix
 sudo lvdisplay nix
 
 # 5️⃣  Format Logical Volumes with F2FS
-echo -e "\033[1;34m[INFO]\033[0m Formatting Logical Volumes with F2FS...",fs_verity
+echo -e "\033[1;34m[INFO]\033[0m Formatting Logical Volumes with F2FS..."
 sudo mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum,flexible_inline_xattr -z 512 /dev/nix/tmp  || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format tmp LV!"; exit 1; }
 sudo mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum,flexible_inline_xattr -z 512 /dev/nix/var  || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format var LV!"; exit 1; }
 sudo mkfs.f2fs -f -O extra_attr,inode_checksum,sb_checksum,flexible_inline_xattr -z 512 /dev/nix/root || { echo -e "\033[1;31m[ERROR]\033[0m Failed to format root LV!"; exit 1; }

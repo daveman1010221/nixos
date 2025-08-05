@@ -25,6 +25,7 @@ let
   nvme       = "${pkgs.nvme-cli}/bin/nvme";
   statBin    = "${pkgs.coreutils}/bin/stat";
   shred      = "${pkgs.coreutils}/bin/shred";
+  awk        = "${pkgs.gawk}/bin/awk";
   cp         = "${pkgs.coreutils}/bin/cp";
   chmodBin   = "${pkgs.coreutils}/bin/chmod";
   modprobe   = "${pkgs.kmod}/bin/modprobe";
@@ -41,6 +42,8 @@ in
     nvme-cli
     util-linux        # provides mount/umount (tiny, so cheap to include)
     coreutils         # cp / chmod / stat / shred / sync
+    gawk              # for robust parsing of 'nvme sed discover'
+    expect            # to feed nvme sed --ask-key non-interactively
     systemd           # udevadm + systemd-ask-password in stage-1
     kmod              # modprobe in stage-1
   ];
@@ -54,7 +57,7 @@ in
     before      = [ "sysroot.mount" ];
 
     # keep $PATH convenience (but script uses absolute paths anyway)
-    path = with pkgs; [ bash coreutils util-linux cryptsetup nvme-cli kmod systemd ];
+    path = with pkgs; [ bash coreutils util-linux cryptsetup nvme-cli gawk expect kmod systemd ];
 
     serviceConfig = {
       Type = "oneshot";
@@ -112,9 +115,45 @@ in
       ${umount} /tmp/boot
       ${cryptsetup} luksClose secrets_crypt
 
-      echo "[nvme-hw-key] Injecting key into drives"
-      ${nvme} key-set --namespace-id=1 --key=${keyFile} ${nvme0}
-      ${nvme} key-set --namespace-id=1 --key=${keyFile} ${nvme1}
+      echo "[nvme-hw-key] Injecting key into drives (SED Opal unlock)"
+      # Read ASCII passphrase from the staged file (strip trailing newline)
+      PW="$(${pkgs.coreutils}/bin/tr -d '\n' < ${keyFile})"
+      if [ -z "$PW" ]; then
+      echo "nvme.key is empty" >&2
+      exit 1
+      fi
+
+      # Optional: log current state
+      ${nvme} sed discover ${nvme0} || true
+      ${nvme} sed discover ${nvme1} || true
+
+      # Unlock both drives (nvme-cli prompts; drive with expect to avoid a TTY)
+      for dev in ${nvme0} ${nvme1}; do
+        ${pkgs.expect}/bin/expect -c '
+          set timeout 20
+          set pw  [lindex $argv 0]
+          set dev [lindex $argv 1]
+          spawn '"${nvme}"' sed unlock $dev --ask-key
+          expect -re {(?i)pass(word)?|key.*:} { send -- "$pw\r" }
+          expect {
+            eof     { }
+            timeout { exit 1 }
+          }
+          # return child exit status
+          catch wait result
+          exit [lindex $result 3]
+        ' "$PW" "$dev"
+      done
+
+      # Quick verification that both are unlocked
+      for dev in ${nvme0} ${nvme1}; do
+        out="$(${nvme} sed discover "$dev" 2>/dev/null || true)"
+        locked="$(echo "$out" | ${awk} -F: "/^[[:space:]]*Locked/{gsub(/^[ \\t]+|[ \\t]+$/,\"\",\$2); print \$2}")"
+        if [ "$locked" != "No" ]; then
+          echo "[nvme-hw-key] ERROR: $dev still locked" >&2
+          exit 1
+        fi
+      done
 
       echo "[nvme-hw-key] Verifying tmpfs, then shredding key"
       fsType=$(${statBin} -f -c %T ${mountPoint})
@@ -123,6 +162,10 @@ in
         exit 1
       fi
       ${shred} -u ${keyFile}
+
+      # Drop the tmpfs so the key file cannot be recovered later
+      ${umount} ${mountPoint} || true
+      rmdir ${mountPoint} 2>/dev/null || true
     '';
   };
 }
