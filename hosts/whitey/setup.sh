@@ -4,6 +4,19 @@ set -euo pipefail  # Safer script execution
 shopt -s lastpipe
 export LC_ALL=C
 
+# ── sane defaults for -u and logs ───────────────────────────────
+# : "${SED_LOG_DIR:=/tmp/sed-debug}"
+# : "${SED_DEBUG:=1}"
+# : "${SUDO_BIN:=sudo}"
+# : "${NVME_BIN:=nvme}"
+# : "${EXPECT_BIN:=expect}"
+# ensure log dir exists and is writable by current user (not root leftovers)
+# if [ -d "$SED_LOG_DIR" ] && [ ! -w "$SED_LOG_DIR" ]; then
+#   echo "[WARN] $SED_LOG_DIR not writable; attempting chown…" >&2
+#   $SUDO_BIN chown "$(id -u)":"$(id -g)" "$SED_LOG_DIR" 2>/dev/null || true
+# fi
+# mkdir -p "$SED_LOG_DIR"
+
 ### FUNCTIONS
 function confirm() {
     echo -e "\n\033[1;33m[WARNING]\033[0m $1"
@@ -19,91 +32,302 @@ function confirm() {
 # ────────────────────────────────────────────────────────────────
 
 # Reads passphrase from ${KEYS_DIR}/nvme.key (created later)
-sed_load_key() {
-    SED_KEY="$(sudo tr -d '\n' < "${KEYS_DIR}/nvme.key")"
-    if [[ -z "${SED_KEY:-}" ]]; then
-        echo -e "\033[1;31m[ERROR]\033[0m nvme.key is empty or missing"
-        return 1
-    fi
-}
+# sed_load_key() {
+#     local f="${KEYS_DIR}/nvme.key"
+#     if [[ ! -r "$f" ]]; then
+#         # read via sudo cat so the *read* happens as root, not the redirection
+#         SED_KEY="$(sudo cat "$f" 2>/dev/null | tr -d '\n')"
+#     else
+#         SED_KEY="$(tr -d '\n' < "$f")"
+#     fi
+#     if [[ -z "${SED_KEY:-}" ]]; then
+#         echo -e "\033[1;31m[ERROR]\033[0m nvme.key is empty or missing"
+#         return 1
+#     fi
+# }
 
 # Initialize Opal on a namespace (prompts for *new* password)
-sed_initialize() {
-    local dev="$1"
-    sed_load_key
-    echo -e "\033[1;34m[INFO]\033[0m Initializing Opal on ${dev}..."
-    expect -c "
-        set timeout 60
-        spawn sudo nvme sed initialize $dev
-        # Different firmwares prompt differently; answer any password/key prompts twice if asked.
-        expect {
-          -re {(?i)pass(word)?|key.*:} { send -- \"${SED_KEY}\r\"; exp_continue }
-          eof
-        }
-    "
-}
+# sed_initialize() {
+#     local dev="$1"
+#     sed_load_key
+#     local log="${SED_LOG_DIR:-/tmp/sed-debug}/initialize-$(basename "$dev").log"
+#     mkdir -p "${SED_LOG_DIR:-/tmp/sed-debug}" || true
+#
+#     echo -e "\033[1;34m[INFO]\033[0m Initializing Opal on ${dev}… (log: $log)"
+#     DEV="$dev" SED_KEY="${SED_KEY:-}" LOG_FILE="$log" expect -c '
+#         set timeout 120
+#         set dev   $env(DEV)
+#         set pw    ""
+#         if {[info exists env(SED_KEY)]} { set pw $env(SED_KEY) }
+#         set logf  "/dev/stderr"
+#         if {[info exists env(LOG_FILE)]} { set logf $env(LOG_FILE) }
+#         if {[catch {log_file -a $logf} err]} { send_user "DBG_INIT: cannot log to $logf: $err\n" }
+#         log_user 1
+#
+#         send_user "DBG_INIT: discover(before)\n"
+#         catch {exec sudo nvme sed discover $dev} pre
+#         send_user "$pre\n"
+#
+#         if {[catch {spawn sudo nvme sed initialize $dev} err]} {
+#             send_user "DBG_INIT: spawn failed: $err\n"; exit 1
+#         }
+#
+#         expect {
+#           -re {(?i)new.*pass(word)?|new.*key.*:} {
+#               send_user "DBG_INIT: NEW password prompt -> sending (len=[string length $pw])\n"
+#               send -- "$pw\r"; exp_continue
+#           }
+#           -re {(?i)re-?enter.*pass(word)?|re-?enter.*key.*:} {
+#               send_user "DBG_INIT: RE-ENTER password prompt -> sending\n"
+#               send -- "$pw\r"; exp_continue
+#           }
+#           -re {(?i)pass(word)?|key.*:} {
+#               send_user "DBG_INIT: generic password/key prompt -> sending\n"
+#               send -- "$pw\r"; exp_continue
+#           }
+#           timeout { send_user "DBG_INIT: TIMEOUT during initialize\n" }
+#           eof {}
+#         }
+#
+#         set rc [lindex [wait] 3]
+#         send_user "DBG_INIT: discover(after)\n"
+#         catch {exec sudo nvme sed discover $dev} post
+#         send_user "$post\n"
+#         send_user "DBG_INIT: rc=$rc\n"
+#         exit $rc
+#     '
+# }
 
-# Unlock (needs existing password)
-sed_unlock() {
-    local dev="$1"
-    sed_load_key
-    echo -e "\033[1;34m[INFO]\033[0m Unlocking ${dev}..."
-    expect -c "
-        set timeout 30
-        spawn sudo nvme sed unlock $dev --ask-key
-        expect -re {(?i)pass(word)?|key.*:} { send -- \"${SED_KEY}\r\" }
-        expect eof
-    "
-}
-
-# Lock the drive (requires current password)
-sed_lock() {
-    local dev="$1"
-    sed_load_key
-    echo -e "\033[1;34m[INFO]\033[0m Locking ${dev}..."
-    expect -c "
-        set timeout 30
-        spawn sudo nvme sed lock $dev --ask-key
-        expect -re {(?i)pass(word)?|key.*:} { send -- \"${SED_KEY}\r\" }
-        expect eof
-    "
-}
+# If initialize still errors with Host Not Authorized, PSID revert + power-cycle is the path.
+# sed_psid_revert_then_die() {
+#     local dev="$1"
+#     echo -e "\033[1;33m[WARN]\033[0m initialize failed with authorization error on ${dev}."
+#     echo -e "\033[1;33m[WARN]\033[0m You likely need a PSID revert followed by a FULL POWER-CYCLE."
+#     read -rp "Enter PSID for ${dev} (printed on label, no dashes): " PSID
+#     if [[ -z "$PSID" ]]; then
+#         echo -e "\033[1;31m[ERROR]\033[0m PSID required."
+#         exit 1
+#     fi
+#
+#     local log="${SED_LOG_DIR:-/tmp/sed-debug}/revert-psid-$(basename "$dev").log"
+#     mkdir -p "${SED_LOG_DIR:-/tmp/sed-debug}" || true
+#     echo -e "\033[1;33m[WARN]\033[0m Reverting ${dev} via PSID… (log: $log)"
+#
+#     DEV="$dev" PSID="$PSID" LOG_FILE="$log" expect -c '
+#         set timeout 120
+#         set dev   $env(DEV)
+#         set psid  $env(PSID)
+#         set logf  "/dev/stderr"
+#         if {[info exists env(LOG_FILE)]} { set logf $env(LOG_FILE) }
+#         if {[catch {log_file -a $logf} err]} { send_user "DBG_PSID: cannot log to $logf: $err\n" }
+#         log_user 1
+#
+#         send_user "DBG_PSID: discover(before)\n"
+#         catch {exec sudo nvme sed discover $dev} pre
+#         send_user "$pre\n"
+#
+#         if {[catch {spawn sudo nvme sed revert $dev --psid} err]} {
+#             send_user "DBG_PSID: spawn failed: $err\n"; exit 1
+#         }
+#
+#         expect {
+#           -re {(?i)psid.*:} { send_user "DBG_PSID: sending PSID\n"; send -- "$psid\r"; exp_continue }
+#           timeout { send_user "DBG_PSID: TIMEOUT\n" }
+#           eof {}
+#         }
+#
+#         set rc [lindex [wait] 3]
+#         send_user "DBG_PSID: rc=$rc\n"
+#         exit $rc
+#     '
+#
+#     echo -e "\n\033[1;33m[ACTION REQUIRED]\033[0m"
+#     echo "Shut the machine down completely and remove power for ~10 seconds."
+#     echo "Then boot again and re-run the script — it will skip revert and go straight to initialize."
+#     exit 90
+# }
 
 # Revert a drive out of Opal state.
-# mode: 'normal' (no flags), 'destructive' (--destructive), or 'psid' (--psid; will prompt for PSID).
-sed_revert() {
-    local dev="$1"
-    local mode="$2"
-    echo -e "\033[1;33m[WARN]\033[0m Reverting ${dev} from Opal state (mode=${mode})..."
-    case "$mode" in
-      normal)
-        sudo nvme sed revert "$dev"
-        ;;
-      destructive)
-        sudo nvme sed revert "$dev" --destructive
-        ;;
-      psid)
-        read -rp "Enter PSID for ${dev} (printed on drive label, no dashes): " PSID
-        if [[ -z "$PSID" ]]; then
-            echo -e "\033[1;31m[ERROR]\033[0m PSID required for PSID revert."
-            return 1
-        fi
-        # Some builds of nvme-cli will prompt; drive it with expect just in case.
-        expect -c "
-            set timeout 90
-            spawn sudo nvme sed revert $dev --psid
-            expect {
-              -re {(?i)psid.*:} { send -- \"${PSID}\r\"; exp_continue }
-              eof
-            }
-        "
-        ;;
-      *)
-        echo -e "\033[1;31m[ERROR]\033[0m Unknown revert mode: $mode"
-        return 1
-        ;;
-    esac
-}
+# mode: 'normal' | 'destructive' | 'psid'
+# Env knobs (optional):
+#   SED_LOG_DIR           (default: /tmp/sed-debug)
+#   SED_REVERT_TIMEOUT_S  (default: 600)  # overall deadline for 'destructive'
+# sed_revert() {
+#     local dev="$1"
+#     local mode="$2"
+#     local logdir="${SED_LOG_DIR:-/tmp/sed-debug}"
+#     local log="${logdir}/revert-${mode}-$(basename "$dev").log"
+#     local deadline="${SED_REVERT_TIMEOUT_S:-600}"
+#
+#     mkdir -p "$logdir" 2>/dev/null || true
+#     if [[ ! -w "$logdir" ]]; then
+#         echo -e "\033[1;33m[WARN]\033[0m $logdir not writable; logging to stderr."
+#         log="/dev/stderr"
+#     fi
+#
+#     echo -e "\033[1;33m[WARN]\033[0m Reverting ${dev} from Opal state (mode=${mode})… (log: $log)"
+#
+#     case "$mode" in
+#       normal)
+#         DEV="$dev" LOG_FILE="$log" expect -c '
+#             set timeout 120
+#             set dev   $env(DEV)
+#             set logf  $env(LOG_FILE)
+#             if {[catch {log_file -a $logf} err]} { send_user "DBG_REV(normal): cannot open $logf: $err\n" }
+#             log_user 1
+#
+#             send_user "DBG_REV(normal): discover(before)\n"
+#             catch {exec sudo nvme sed discover $dev} pre
+#             send_user "$pre\n"
+#
+#             if {[catch {spawn sudo nvme sed revert $dev} err]} {
+#               send_user "DBG_REV(normal): spawn failed: $err\n"; exit 1
+#             }
+#
+#             expect {
+#               -re {(?i)continue.*\(y/n\)\?}   { send_user "DBG_REV(normal): Continue? -> y\n"; send -- "y\r"; exp_continue }
+#               -re {(?i)are you sure.*\(y/n\)\?} { send_user "DBG_REV(normal): Are you sure? -> y\n"; send -- "y\r"; exp_continue }
+#               -re {(?i)pass(word)?|key.*:}   { send_user "DBG_REV(normal): password/key prompt -> <blank>\n"; send -- "\r"; exp_continue }
+#               eof {}
+#               timeout { send_user "DBG_REV(normal): TIMEOUT\n"; exit 124 }
+#             }
+#
+#             set rc [lindex [wait] 3]
+#             send_user "DBG_REV(normal): rc=$rc\n"
+#             exit $rc
+#         '
+#         ;;
+#
+#       destructive)
+#         DEV="$dev" LOG_FILE="$log" DEADLINE="$deadline" expect -c '
+#             set dev      $env(DEV)
+#             set logf     $env(LOG_FILE)
+#             set deadline $env(DEADLINE)
+#
+#             if {[catch {log_file -a $logf} err]} { send_user "DBG_REV(destructive): cannot open $logf: $err\n" }
+#             log_user 1
+#
+#             send_user "DBG_REV(destructive): discover(before)\n"
+#             catch {exec sudo nvme sed discover $dev} pre
+#             send_user "$pre\n"
+#
+#             if {[catch {spawn sudo nvme sed revert $dev --destructive} err]} {
+#               send_user "DBG_REV(destructive): spawn failed: $err\n"; exit 1
+#             }
+#             set pid [exp_pid]
+#             send_user "DBG_REV(destructive): spawned pid=$pid, deadline=${deadline}s\n"
+#
+#             set t0 [clock seconds]
+#             set done 0
+#             while {!$done} {
+#               set now [clock seconds]
+#               if {$deadline > 0 && ($now - $t0) >= $deadline} {
+#                 send_user "DBG_REV(destructive): deadline reached, sending INT to $pid\n"
+#                 catch {exec kill -INT $pid}
+#                 after 3000
+#                 catch {exec kill -KILL $pid}
+#                 exit 124
+#               }
+#               expect {
+#                 -re {(?i)continue.*\(y/n\)\?}   { send_user "DBG_REV(destructive): Continue? -> y\n"; send -- "y\r"; exp_continue }
+#                 -re {(?i)are you sure.*\(y/n\)\?} { send_user "DBG_REV(destructive): Are you sure? -> y\n"; send -- "y\r"; exp_continue }
+#                 -re {(?i)pass(word)?|key.*:}   { send_user "DBG_REV(destructive): password/key prompt -> <blank>\n"; send -- "\r"; exp_continue }
+#                 eof { set done 1 }
+#                 timeout { after 5000; send_user "DBG_REV(destructive): waiting… elapsed=[expr {$now - $t0}]s\n" }
+#               }
+#             }
+#
+#             set rc [lindex [wait] 3]
+#             send_user "DBG_REV(destructive): rc=$rc\n"
+#             exit $rc
+#         '
+#         ;;
+#
+#       psid)
+#         read -rp "Enter PSID for ${dev} (printed on drive label, no dashes): " PSID
+#         [[ -z "$PSID" ]] && { echo -e "\033[1;31m[ERROR]\033[0m PSID required for PSID revert."; return 1; }
+#         DEV="$dev" PSID="$PSID" LOG_FILE="$log" expect -c '
+#             set timeout 300
+#             set dev  $env(DEV)
+#             set psid $env(PSID)
+#             set logf $env(LOG_FILE)
+#             if {[catch {log_file -a $logf} err]} { send_user "DBG_REV(psid): cannot open $logf: $err\n" }
+#             log_user 1
+#
+#             if {[catch {spawn sudo nvme sed revert $dev --psid} err]} {
+#               send_user "DBG_REV(psid): spawn failed: $err\n"; exit 1
+#             }
+#             expect {
+#               -re {(?i)psid.*:} { send_user "DBG_REV(psid): sending PSID\n"; send -- "$psid\r"; exp_continue }
+#               eof {}
+#               timeout { send_user "DBG_REV(psid): TIMEOUT\n"; exit 124 }
+#             }
+#             set rc [lindex [wait] 3]
+#             send_user "DBG_REV(psid): rc=$rc\n"
+#             exit $rc
+#         '
+#         ;;
+#
+#       *)
+#         echo -e "\033[1;31m[ERROR]\033[0m Unknown revert mode: $mode"; return 1 ;;
+#     esac
+# }
+
+# Unlock (needs existing password)
+# sed_unlock() {
+#     local dev="$1"
+#     sed_load_key
+#     local log="${SED_LOG_DIR:-/tmp/sed-debug}/unlock-$(basename "$dev").log"
+#     echo -e "\033[1;34m[INFO]\033[0m Unlocking ${dev}… (log: $log)"
+#     DEV="$dev" SED_KEY="$SED_KEY" LOG_FILE="$log" expect -c '
+#         set timeout 45
+#         set dev  $env(DEV)
+#         set pw   $env(SED_KEY)
+#         set logf "/dev/stderr"
+#         if {[info exists env(LOG_FILE)]} { set logf $env(LOG_FILE) }
+#         if {[catch {log_file -a $logf} err]} {
+#             send_user "DBG_UNLOCK: could not open log file $logf: $err\n"
+#         }
+#         log_user 1
+#
+#         spawn sudo nvme sed unlock $dev --ask-key
+#         expect {
+#           -re {(?i)pass(word)?|key.*:} { send_user "DBG_UNLOCK: password prompt; sending key\n"; send -- "$pw\r"; exp_continue }
+#           timeout { send_user "DBG_UNLOCK: TIMEOUT during unlock\n" }
+#           eof { }
+#         }
+#         set rc [lindex [wait] 3]
+#         exit $rc
+#     '
+# }
+
+# Lock the drive (requires current password)
+# sed_lock() {
+#     local dev="$1"
+#     sed_load_key
+#     local log="${SED_LOG_DIR:-/tmp/sed-debug}/lock-$(basename "$dev").log"
+#     echo -e "\033[1;34m[INFO]\033[0m Locking ${dev}… (log: $log)"
+#     DEV="$dev" SED_KEY="$SED_KEY" LOG_FILE="$log" expect -c '
+#         set timeout 45
+#         set dev  $env(DEV)
+#         set pw   $env(SED_KEY)
+#         set logf "/dev/stderr"
+#         if {[info exists env(LOG_FILE)]} { set logf $env(LOG_FILE) }
+#         if {[catch {log_file -a $logf} err]} {
+#             send_user "DBG_LOCK: could not open log file $logf: $err\n"
+#         }
+#         log_user 1
+#
+#         spawn sudo nvme sed lock $dev --ask-key
+#         expect {
+#           -re {(?i)pass(word)?|key.*:} { send_user "DBG_LOCK: password prompt; sending key\n"; send -- "$pw\r"; exp_continue }
+#           timeout { send_user "DBG_LOCK: TIMEOUT during lock\n" }
+#           eof { }
+#         }
+#         set rc [lindex [wait] 3]
+#         exit $rc
+#     '
+# }
 
 # Minimal runtime cleanup so kernel state is sane before/after SED ops
 runtime_sanity() {
@@ -127,70 +351,93 @@ runtime_sanity() {
 }
 
 # Assert Opal is enabled and currently unlocked on a device
-sed_assert_enabled_unlocked() {
-    local dev="$1"
-    local out enabled locked
-    out="$(sudo nvme sed discover "$dev" 2>/dev/null || true)"
-    enabled="$(echo "$out" | awk -F: '/Locking Feature Enabled/{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')"
-    locked="$(echo "$out" | awk -F: '/^[[:space:]]*Locked/{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')"
-    if [[ "$enabled" != "Yes" ]]; then
-        echo -e "\033[1;31m[ERROR]\033[0m ${dev}: Locking Feature Enabled != Yes after initialize"; exit 1
-    fi
-    if [[ "$locked" != "No" ]]; then
-        echo -e "\033[1;31m[ERROR]\033[0m ${dev}: drive is locked unexpectedly"; exit 1
-    fi
-}
+# sed_assert_enabled_unlocked() {
+#     local dev="$1"
+#     local out enabled locked
+#     out="$(sudo nvme sed discover "$dev" 2>/dev/null || true)"
+#     enabled="$(echo "$out" | awk -F: '/Locking Feature Enabled/{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')"
+#     locked="$(echo "$out" | awk -F: '/^[[:space:]]*Locked/{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')"
+#     if [[ "$enabled" != "Yes" ]]; then
+#         echo -e "\033[1;31m[ERROR]\033[0m ${dev}: Locking Feature Enabled != Yes after initialize"; exit 1
+#     fi
+#     if [[ "$locked" != "No" ]]; then
+#         echo -e "\033[1;31m[ERROR]\033[0m ${dev}: drive is locked unexpectedly"; exit 1
+#     fi
+# }
 
-# Query and return 'Yes'/'No' for Locking Feature Enabled
-sed_enabled() {
-    local dev="$1"
-    local out
-    out="$(sudo nvme sed discover "$dev" 2>/dev/null || true)"
-    val="$(echo "$out" | awk -F: '/Locking Feature Enabled/{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')"
-    [[ -z "$val" ]] && echo "Unknown" || echo "$val"
-}
+# Return 'Yes'/'No' for Locking Feature Enabled
+# sed_enabled() {
+#     local dev="$1"
+#     local out
+#     out="$(sudo nvme sed discover "$dev" 2>/dev/null || true)"
+#     echo "$out" | awk -F: '/Locking Feature Enabled/{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}'
+# }
 
-# Full reset+init flow for one namespace:
-#  - Always try destructive revert (hardware crypto-wipe). If it fails and Opal
-#    was previously enabled, offer PSID revert; otherwise continue.
-#  - Initialize (sets password via prompt to our key).
-#  - Verify lock+unlock; leave unlocked.
-sed_reset_and_init() {
-    local dev="$1"
-    local en
-    en=$(sed_enabled "$dev" || echo "Unknown")
+# Return 'Yes'/'No' for Locked (handle leading tabs/spaces)
+# sed_locked() {
+#     local dev="$1"
+#     local out
+#     out="$(sudo nvme sed discover "$dev" 2>/dev/null || true)"
+#     echo "$out" | awk -F: '/[[:space:]]*Locked[[:space:]]*/{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}'
+# }
 
-    echo -e "\033[1;34m[INFO]\033[0m Checking SED state for ${dev} (Enabled: ${en})"
-    echo -e "\033[1;34m[INFO]\033[0m Attempting hardware crypto-wipe (destructive revert) on ${dev}…"
-    if ! sed_revert "$dev" destructive; then
-        if [[ "$en" == "Yes" ]]; then
-            echo -e "\033[1;33m[WARN]\033[0m Destructive revert failed and Opal was enabled; offering PSID revert."
-            sed_revert "$dev" psid
-        else
-            echo -e "\033[1;33m[WARN]\033[0m Destructive revert not supported/failed on ${dev}; continuing."
-        fi
-    fi
-    # Reset controller node after revert so the kernel forgets stale state
-    sudo nvme reset "${dev%%n*}" 2>/dev/null || true; sudo udevadm settle || true
+# Only revert if Opal is enabled or locked
+# sed_should_revert() {
+#     local dev="$1"
+#     local en locked
+#     en="$(sed_enabled "$dev" || echo "Unknown")"
+#     locked="$(sed_locked "$dev" || echo "Unknown")"
+#
+#     if [[ "$en" == "Yes" || "$locked" == "Yes" ]]; then
+#         return 0   # yes, revert
+#     else
+#         return 1   # no revert needed
+#     fi
+# }
 
-    # Initialize and set password
-    sed_initialize "$dev"
-
-    # Some firmware needs a moment to settle before state reflects correctly
-    sudo udevadm settle || true; sleep 0.5
-
-    # Must report enabled after init
-    sed_assert_enabled_unlocked "$dev"
-
-    # Verification: lock then unlock using our key, leave unlocked
-    echo -e "\033[1;34m[INFO]\033[0m Verifying lock/unlock on ${dev}…"
-    sed_lock "$dev" || { echo -e "\033[1;31m[ERROR]\033[0m Failed to lock ${dev}"; exit 1; }
-    sed_unlock "$dev" || { echo -e "\033[1;31m[ERROR]\033[0m Failed to unlock ${dev} after locking"; exit 1; }
-
-    echo -e "\033[1;34m[INFO]\033[0m Post-verification SED state for ${dev}:"
-    sed_assert_enabled_unlocked "$dev"
-    sudo nvme sed discover "$dev" || true
-}
+# Full flow: conditional revert -> initialize -> verify
+# sed_reset_and_init() {
+#     local dev="$1"
+#
+#     local en before_locked
+#     en="$(sed_enabled "$dev" || echo "Unknown")"
+#     before_locked="$(sed_locked "$dev" || echo "Unknown")"
+#     echo -e "\033[1;34m[INFO]\033[0m ${dev} pre-state: Enabled=${en}, Locked=${before_locked}"
+#
+#     if sed_should_revert "$dev"; then
+#         echo -e "\033[1;33m[WARN]\033[0m ${dev} appears active/locked; attempting destructive revert…"
+#         if ! sed_revert "$dev" destructive; then
+#             echo -e "\033[1;33m[WARN]\033[0m Destructive revert failed on ${dev}. You may need a PSID revert."
+#             # You can fall back to PSID automatically here if you want:
+#             # sed_psid_revert_then_die "$dev"
+#         fi
+#         sudo nvme reset "${dev%%n*}" 2>/dev/null || true
+#         sudo udevadm settle || true
+#     else
+#         echo -e "\033[1;34m[INFO]\033[0m ${dev}: Opal not enabled and not locked; skipping revert."
+#     fi
+#
+#     if ! sed_initialize "$dev"; then
+#         # Most common reason here is Host Not Authorized latch in firmware
+#         sed_psid_revert_then_die "$dev"
+#     fi
+#
+#     local en_after locked_after
+#     en_after="$(sed_enabled "$dev" || echo "Unknown")"
+#     locked_after="$(sed_locked "$dev" || echo "Unknown")"
+#     echo -e "\033[1;34m[INFO]\033[0m ${dev} post-init: Enabled=${en_after}, Locked=${locked_after}"
+#
+#     if [[ "$en_after" != "Yes" || "$locked_after" != "No" ]]; then
+#         echo -e "\033[1;31m[ERROR]\033[0m ${dev}: unexpected state after initialize (Enabled=${en_after}, Locked=${locked_after})"
+#         return 1
+#     fi
+#
+#     echo -e "\033[1;34m[INFO]\033[0m Verifying lock/unlock on ${dev}…"
+#     sed_lock "$dev"  || { echo -e "\033[1;31m[ERROR]\033[0m lock failed on ${dev}"; return 1; }
+#     sed_unlock "$dev"|| { echo -e "\033[1;31m[ERROR]\033[0m unlock failed on ${dev}"; return 1; }
+#
+#     echo -e "\033[1;32m[OK]\033[0m ${dev} initialized, enabled, and unlock verified."
+# }
 
 function check_command() {
     if ! command -v "$1" &>/dev/null; then
@@ -241,11 +488,11 @@ BOOT_MOUNT="/mnt/boot"
 SECRETS_MOUNT="/mnt/secrets"
 EFI_PARTITION="${DEFAULT_BOOT}1"
 BOOT_PARTITION="${DEFAULT_BOOT}2"
-SECRETS_PARTITION="${DEFAULT_BOOT}3"
-DATA_PARTITION="${DEFAULT_BOOT}4"
+#SECRETS_PARTITION="${DEFAULT_BOOT}3"
+DATA_PARTITION="${DEFAULT_BOOT}3"
 
 # keys will live on the encrypted /secrets partition
-KEYS_DIR="${SECRETS_MOUNT}/keys"
+#KEYS_DIR="${SECRETS_MOUNT}/keys"
 
 # Ensure OpenSSL is installed
 if ! command -v openssl &>/dev/null; then
@@ -258,14 +505,15 @@ fi
 
 ### PRE-FLIGHT CHECKS
 echo -e "\033[1;34m[INFO]\033[0m Checking required commands..."
-for cmd in openssl parted mdadm pvcreate vgcreate lvcreate mkfs.ext4 mkfs.f2fs mkfs.vfat git nvme expect dmsetup; do
+for cmd in openssl parted mdadm pvcreate vgcreate lvcreate mkfs.ext4 mkfs.f2fs mkfs.vfat git nvme dmsetup; do
+#for cmd in openssl parted mdadm pvcreate vgcreate lvcreate mkfs.ext4 mkfs.f2fs mkfs.vfat git nvme expect dmsetup; do
     check_command "$cmd"
 done
 
 ### RUNTIME SANITY (compact) ###
 runtime_sanity
 
-echo -e "\033[1;34m[INFO]\033[0m Proceeding with SED hardware crypto-wipe & init before provisioning…"
+#echo -e "\033[1;34m[INFO]\033[0m Proceeding with SED hardware crypto-wipe & init before provisioning…"
 
 ### PARTITIONING ###
 echo -e "\033[1;34m[INFO]\033[0m Partitioning ${DEFAULT_BOOT}..."
@@ -279,10 +527,10 @@ sudo parted -s ${DEFAULT_BOOT} set   1 esp on
 sudo parted -s ${DEFAULT_BOOT} mkpart BOOT ext4    551MiB 2599MiB
 
 # 3  /secrets 256 MiB (will be LUKS2 → ext4)
-sudo parted -s ${DEFAULT_BOOT} mkpart SECRETS ext4 2599MiB 2855MiB
+#sudo parted -s ${DEFAULT_BOOT} mkpart SECRETS ext4 2599MiB 2855MiB
 
 # 4  /data  remainder of the stick
-sudo parted -s ${DEFAULT_BOOT} mkpart DATA ext4    2855MiB 100%
+sudo parted -s ${DEFAULT_BOOT} mkpart DATA ext4    2599MiB 100%
 
 ### FORMATTING EFI ###
 echo -e "\033[1;34m[INFO]\033[0m Formatting EFI partition..."
@@ -297,31 +545,31 @@ sudo mkdir -p ${BOOT_MOUNT}/EFI
 sudo mount ${EFI_PARTITION} ${BOOT_MOUNT}/EFI
 
 # create & unlock the **LUKS2 /secrets** slice
-echo -e "\033[1;34m[INFO]\033[0m Creating encrypted /secrets partition (you’ll be prompted once)..."
-sudo cryptsetup luksFormat --type luks2 --cipher aes-xts-plain64 --key-size 512 --hash sha256 ${SECRETS_PARTITION}
-sudo cryptsetup luksOpen ${SECRETS_PARTITION} secrets_crypt
-sudo mkfs.ext4  /dev/mapper/secrets_crypt
-sudo mkdir -p   ${SECRETS_MOUNT}
-sudo mount      /dev/mapper/secrets_crypt ${SECRETS_MOUNT}
+# echo -e "\033[1;34m[INFO]\033[0m Creating encrypted /secrets partition (you’ll be prompted once)..."
+# sudo cryptsetup luksFormat --type luks2 --cipher aes-xts-plain64 --key-size 512 --hash sha256 ${SECRETS_PARTITION}
+# sudo cryptsetup luksOpen ${SECRETS_PARTITION} secrets_crypt
+# sudo mkfs.ext4  /dev/mapper/secrets_crypt
+# sudo mkdir -p   ${SECRETS_MOUNT}
+# sudo mount      /dev/mapper/secrets_crypt ${SECRETS_MOUNT}
 
 # ────────────────────────────────────────────────────────────────
 # Create/keep SED passphrase & (optionally) reset pre-encrypted drives
 # ────────────────────────────────────────────────────────────────
-sudo mkdir -p "${KEYS_DIR}"
-# 24-byte random, base64 (~32 chars). Regenerate only if missing.
-if [[ ! -f "${KEYS_DIR}/nvme.key" ]]; then
-  echo -e "\033[1;34m[INFO]\033[0m Generating SED passphrase (Base64, 24 bytes)…"
-  sudo openssl rand -base64 24 | sudo tee "${KEYS_DIR}/nvme.key" >/dev/null
-  sudo chmod 0400 "${KEYS_DIR}/nvme.key"
-  sync
-else
-  echo -e "\033[1;33m[WARN]\033[0m ${KEYS_DIR}/nvme.key already exists; reusing."
-fi
+# sudo mkdir -p "${KEYS_DIR}"
+# # 24-byte random, base64 (~32 chars). Regenerate only if missing.
+# if [[ ! -f "${KEYS_DIR}/nvme.key" ]]; then
+#   echo -e "\033[1;34m[INFO]\033[0m Generating SED passphrase (Base64, 24 bytes)…"
+#   sudo openssl rand -base64 24 | sudo tee "${KEYS_DIR}/nvme.key" >/dev/null
+#   sudo chmod 0400 "${KEYS_DIR}/nvme.key"
+#   sync
+# else
+#   echo -e "\033[1;33m[WARN]\033[0m ${KEYS_DIR}/nvme.key already exists; reusing."
+# fi
 
 # Hardware crypto-wipe + initialize + verify lock/unlock on both namespaces
-for dev in "/dev/${BLOCK_01}" "/dev/${BLOCK_02}"; do
-  sed_reset_and_init "$dev"
-done
+# for dev in "/dev/${BLOCK_01}" "/dev/${BLOCK_02}"; do
+#   sed_reset_and_init "$dev"
+# done
 
 ### CREATING RAID-0 ###
 
@@ -378,8 +626,8 @@ sudo swapon /dev/nix/swap
 echo -e "\033[1;34m[INFO]\033[0m Unmounting Boot and EFI..."
 sudo umount ${BOOT_MOUNT}/EFI || true
 sudo umount ${BOOT_MOUNT} || true
-sudo umount ${SECRETS_MOUNT}  || true
-sudo cryptsetup luksClose secrets_crypt || true
+#sudo umount ${SECRETS_MOUNT}  || true
+#sudo cryptsetup luksClose secrets_crypt || true
 
 # 7️⃣  Mount Logical Volumes
 echo -e "\033[1;34m[INFO]\033[0m Mounting Logical Volumes..."
@@ -394,9 +642,9 @@ sudo mkdir -p ${BOOT_MOUNT} && mount ${BOOT_PARTITION} ${BOOT_MOUNT}
 sudo mkdir -p ${BOOT_MOUNT}/EFI && mount ${EFI_PARTITION} ${BOOT_MOUNT}/EFI
 
 # remount secrets for the copy-to-nixos step
-sudo mkdir -p ${SECRETS_MOUNT}
-sudo cryptsetup luksOpen ${SECRETS_PARTITION} secrets_crypt
-sudo mount /dev/mapper/secrets_crypt ${SECRETS_MOUNT}
+# sudo mkdir -p ${SECRETS_MOUNT}
+# sudo cryptsetup luksOpen ${SECRETS_PARTITION} secrets_crypt
+# sudo mount /dev/mapper/secrets_crypt ${SECRETS_MOUNT}
 
 echo -e "\033[1;34m[INFO]\033[0m Verifying that all devices and filesystems are correctly set up..."
 
@@ -473,7 +721,7 @@ echo -e "\033[1;34m[INFO]\033[0m Copying NixOS flake repo to its official destin
 sudo cp -r /home/nixos/nixos /mnt/etc
 
 echo -e "\033[1;34m[INFO]\033[0m Moving the hardware configuration to the host-specific path in the repo..."
-mv /mnt/etc/nixos/hardware-configuration.nix /mnt/etc/nixos/hosts/$HOSTNAME/hardware.nix
+sudo mv /mnt/etc/nixos/hardware-configuration.nix /mnt/etc/nixos/hosts/$HOSTNAME/hardware.nix
 
 HWC_PATH="/mnt/etc/nixos/hosts/$HOSTNAME/hardware.nix"
 
@@ -494,7 +742,7 @@ sed -i '/^}/i\
   hardware.keyboard.qmk.enable = true;\
 ' "$HWC_PATH"
 
-mv /mnt/etc/nixos/configuration.nix /mnt/etc/nixos/configuration.nix.installer
+sudo mv /mnt/etc/nixos/configuration.nix /mnt/etc/nixos/configuration.nix.installer
 
 echo -e "\033[1;34m[INFO]\033[0m Extracting hardware-specific details for flake configuration..."
 
@@ -508,11 +756,21 @@ tmp_fs_uuid=$(findmnt -no UUID /mnt/tmp)
 home_fs_uuid=$(findmnt -no UUID /mnt/home)
 
 # UUID of the *unencrypted* mapper device
-secrets_fs_uuid=$(blkid -s UUID -o value /dev/mapper/secrets_crypt)
+#secrets_fs_uuid=$(blkid -s UUID -o value /dev/mapper/secrets_crypt)
 
 # Get persistent device paths
-nvme0_path=$(ls -l /dev/disk/by-id/ | awk '/nvme-uuid.*nvme0n1/ {print "/dev/disk/by-id/" $9}' | head -n1)
-nvme1_path=$(ls -l /dev/disk/by-id/ | awk '/nvme-uuid.*nvme1n1/ {print "/dev/disk/by-id/" $9}' | head -n1)
+nvme0_path="$(
+  for f in /dev/disk/by-id/nvme-uuid.*; do
+    [[ -e "$f" ]] || continue
+    [[ "$(readlink -f "$f")" == /dev/nvme0n1 ]] && { echo "$f"; break; }
+  done
+)"
+nvme1_path="$(
+  for f in /dev/disk/by-id/nvme-uuid.*; do
+    [[ -e "$f" ]] || continue
+    [[ "$(readlink -f "$f")" == /dev/nvme1n1 ]] && { echo "$f"; break; }
+  done
+)"
 
 if [[ -z "$nvme0_path" || -z "$nvme1_path" ]]; then
     echo -e "\033[1;31m[ERROR]\033[0m Failed to determine NVMe device paths!"
@@ -527,7 +785,7 @@ MISSING_VALUES=0
 check_value "$boot_uuid" "Boot UUID"
 check_value "$boot_fs_uuid" "Boot Filesystem UUID"
 check_value "$efi_fs_uuid" "EFI Filesystem UUID"
-check_value "$secrets_fs_uuid"  "Secrets Filesystem UUID"
+#check_value "$secrets_fs_uuid"  "Secrets Filesystem UUID"
 
 if [[ $MISSING_VALUES -gt 0 ]]; then
     echo -e "\033[1;31m[ERROR]\033[0m Some expected values were not found in hardware-configuration.nix!"
@@ -536,8 +794,8 @@ if [[ $MISSING_VALUES -gt 0 ]]; then
 fi
 
 # 🧼 Remove /secrets mount entry to avoid early-stage mount issues
-echo -e "\033[1;34m[INFO]\033[0m Removing /secrets filesystem entry from hardware.nix..."
-sed -i '/fileSystems\."\/secrets"/,/^\s*};/d' "$HWC_PATH"
+#echo -e "\033[1;34m[INFO]\033[0m Removing /secrets filesystem entry from hardware.nix..."
+#sed -i '/fileSystems\."\/secrets"/,/^\s*};/d' "$HWC_PATH"
 
 echo -e "\033[1;34m[INFO]\033[0m Writing ${BOOT_MOUNT}/secrets/flakey.json ..."
 
@@ -557,11 +815,11 @@ sudo cat > "${BOOT_MOUNT}/secrets/flakey.json" <<EOF
   "PLACEHOLDER_TMP":   "/dev/disk/by-uuid/${tmp_fs_uuid}",
   "PLACEHOLDER_HOME":  "/dev/disk/by-uuid/${home_fs_uuid}",
 
-  "PLACEHOLDER_SECRETS": "/dev/disk/by-uuid/${secrets_fs_uuid}",
 
   "GIT_SMTP_PASS": "mlucmulyvpqlfprb"
 }
 EOF
+  #"PLACEHOLDER_SECRETS": "/dev/disk/by-uuid/${secrets_fs_uuid}",
 
 sudo chmod 600 "${BOOT_MOUNT}/secrets/flakey.json"
 
@@ -572,8 +830,8 @@ nixos-install \
   --flake /mnt/etc/nixos#${HOSTNAME} \
   --override-input secrets-empty path:${BOOT_MOUNT}/secrets/flakey.json
 
-sudo umount ${SECRETS_MOUNT}
-sudo cryptsetup luksClose secrets_crypt
+#sudo umount ${SECRETS_MOUNT}
+#sudo cryptsetup luksClose secrets_crypt
 sudo umount "${BOOT_MOUNT}/EFI"
 sudo umount "${BOOT_MOUNT}"
 
