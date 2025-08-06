@@ -350,6 +350,49 @@ runtime_sanity() {
     sudo udevadm settle || true
 }
 
+robust_storage_reset() {
+  echo -e "\033[1;34m[INFO]\033[0m Nuking stale mounts, LVM, md, dm-crypt…"
+
+  # Unmount everything we might have mounted
+  sudo swapoff -a 2>/dev/null || true
+  for m in /mnt/boot/EFI /mnt/boot /mnt/tmp /mnt/var /mnt/home /mnt; do
+    sudo umount -l "$m" 2>/dev/null || true
+  done
+  sudo umount -l /mnt/secrets 2>/dev/null || true
+  if sudo cryptsetup status secrets_crypt &>/dev/null; then
+    sudo cryptsetup luksClose secrets_crypt 2>/dev/null || true
+  fi
+
+  # Deactivate & remove LVM (any VG/LV, esp. "nix")
+  for lv in $(sudo lvs --noheadings -o lv_path 2>/dev/null); do
+    sudo lvremove -fy "$lv" 2>/dev/null || true
+  done
+  for vg in $(sudo vgs --noheadings -o vg_name 2>/dev/null | awk '{print $1}'); do
+    sudo vgchange -an "$vg" 2>/dev/null || true
+    sudo vgremove -fy "$vg" 2>/dev/null || true
+  done
+  for pv in /dev/md0 /dev/nvme0n1 /dev/nvme1n1; do
+    [ -b "$pv" ] || continue
+    sudo pvremove -ff "$pv" 2>/dev/null || true
+  done
+
+  # Stop/remove md and zero member superblocks
+  sudo mdadm --stop /dev/md0 2>/dev/null || true
+  sudo mdadm --remove /dev/md0 2>/dev/null || true
+  for dev in /dev/nvme0n1 /dev/nvme1n1; do
+    [ -b "$dev" ] || continue
+    sudo mdadm --zero-superblock "$dev" 2>/dev/null || true
+    sudo wipefs -af "$dev" 2>/dev/null || true
+  done
+  [ -b /dev/md0 ] && sudo wipefs -af /dev/md0 2>/dev/null || true
+
+  # Any stray dm maps
+  sudo dmsetup remove_all 2>/dev/null || true
+
+  sudo partprobe || true
+  sudo udevadm settle || true
+}
+
 # Assert Opal is enabled and currently unlocked on a device
 # sed_assert_enabled_unlocked() {
 #     local dev="$1"
@@ -446,29 +489,48 @@ function check_command() {
     fi
 }
 
-function check_value() {
+check_value() {
     local value="$1"
     local name="$2"
 
-    if ! grep -qF "$value" "$HWC_PATH"; then
+    if [[ -z "$value" ]]; then
+        echo -e "\033[1;31m[ERROR]\033[0m $name is empty; device may not be ready or blkid needed root."
+        MISSING_VALUES=$((MISSING_VALUES + 1))
+        return
+    fi
+
+    if grep -qF -- "$value" "$HWC_PATH"; then
+        echo -e "\033[1;32m[OK]\033[0m Found $name ($value) in $HWC_PATH."
+    else
         echo -e "\033[1;31m[ERROR]\033[0m Expected $name ($value) not found in $HWC_PATH!"
         MISSING_VALUES=$((MISSING_VALUES + 1))
-    else
-        echo -e "\033[1;32m[OK]\033[0m Found $name ($value) in hardware-configuration.nix."
     fi
 }
 
+get_uuid() {
+  local dev="$1"
+  # Force-refresh cache and probe the device as root.
+  sudo blkid -g >/dev/null 2>&1 || true
+  sudo blkid -p -o value -s UUID "$dev" 2>/dev/null | tr -d '\n'
+}
+
 ### IDENTIFY TARGET DRIVE ###
+# Make sure stale /secrets isn't influencing detection
+sudo umount /mnt/secrets 2>/dev/null || sudo umount -l /mnt/secrets 2>/dev/null || true
+if sudo cryptsetup status secrets_crypt &>/dev/null; then
+  sudo cryptsetup luksClose secrets_crypt 2>/dev/null || true
+fi
+
 echo -e "\033[1;34m[INFO]\033[0m Detecting available disks..."
 lsblk -o NAME,MODEL,SIZE,TYPE,MOUNTPOINT
 
 # Filter out nvme, and loop devices to avoid picking them accidentally
 DEFAULT_BOOT=$(
-  lsblk -dno NAME,SIZE \
-  | grep -vE 'nvme|loop' \
+  lsblk -dno NAME,TYPE,SIZE \
+  | awk '$2=="disk"{print "/dev/"$1, $3}' \
   | sort -h -k2 \
-  | head -n 1 \
-  | awk '{print "/dev/" $1}'
+  | head -n1 \
+  | awk '{print $1}'
 )
 
 if [[ -z "$DEFAULT_BOOT" ]]; then
@@ -478,7 +540,7 @@ fi
 
 echo -e "\n\033[1;33m[WARNING]\033[0m The target boot drive is set to: \033[1;36m${DEFAULT_BOOT}\033[0m"
 echo "Detected details:"
-sudo fdisk -l "${DEFAULT_BOOT}" 2>/dev/null | grep "Disk ${DEFAULT_BOOT}"
+sudo fdisk -l "${DEFAULT_BOOT}" 2>/dev/null | awk -v d="${DEFAULT_BOOT}" '$0 ~ ("^Disk " d) {print}'
 
 confirm "Is this the correct drive? This will ERASE and REINSTALL your system! Type 'YES' to proceed."
 
@@ -512,6 +574,7 @@ done
 
 ### RUNTIME SANITY (compact) ###
 runtime_sanity
+robust_storage_reset
 
 #echo -e "\033[1;34m[INFO]\033[0m Proceeding with SED hardware crypto-wipe & init before provisioning…"
 
@@ -587,13 +650,15 @@ for i in {1..5}; do
 done
 
 echo -e "\033[1;34m[INFO]\033[0m Creating RAID-0 array..."
-sudo mdadm --create --verbose /dev/md0 --level=0 --raid-devices=2 --chunk=512K /dev/${BLOCK_01} /dev/${BLOCK_02}
+sudo mdadm --create --verbose /dev/md0 --level=0 --raid-devices=2 --chunk=512K --force /dev/${BLOCK_01} /dev/${BLOCK_02}
 
 ### CREATING LVM ###
 echo -e "\033[1;34m[INFO]\033[0m Creating LVM structure..."
 
+sudo wipefs -af /dev/md0 2>/dev/null || true
+
 # 1️⃣  Create the Physical Volume
-sudo pvcreate -ff /dev/md0 || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create Physical Volume!"; exit 1; }
+sudo pvcreate -ff -y /dev/md0 || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create Physical Volume!"; exit 1; }
 
 # 2️⃣  Create the Volume Group
 sudo vgcreate -s 16M nix /dev/md0 || { echo -e "\033[1;31m[ERROR]\033[0m Failed to create Volume Group!"; exit 1; }
@@ -632,14 +697,14 @@ sudo umount ${BOOT_MOUNT} || true
 # 7️⃣  Mount Logical Volumes
 echo -e "\033[1;34m[INFO]\033[0m Mounting Logical Volumes..."
 sudo mount /dev/nix/root /mnt || { echo -e "\033[1;31m[ERROR]\033[0m Failed to mount root!"; exit 1; }
-sudo mkdir -p /mnt/tmp  && mount /dev/nix/tmp  /mnt/tmp
-sudo mkdir -p /mnt/var  && mount /dev/nix/var  /mnt/var
-sudo mkdir -p /mnt/home && mount /dev/nix/home /mnt/home
+sudo mkdir -p /mnt/tmp  && sudo mount /dev/nix/tmp  /mnt/tmp
+sudo mkdir -p /mnt/var  && sudo mount /dev/nix/var  /mnt/var
+sudo mkdir -p /mnt/home && sudo mount /dev/nix/home /mnt/home
 
 # 8️⃣  Remount Boot and EFI
 echo -e "\033[1;34m[INFO]\033[0m Remounting Boot and EFI..."
-sudo mkdir -p ${BOOT_MOUNT} && mount ${BOOT_PARTITION} ${BOOT_MOUNT}
-sudo mkdir -p ${BOOT_MOUNT}/EFI && mount ${EFI_PARTITION} ${BOOT_MOUNT}/EFI
+sudo mkdir -p ${BOOT_MOUNT} && sudo mount ${BOOT_PARTITION} ${BOOT_MOUNT}
+sudo mkdir -p ${BOOT_MOUNT}/EFI && sudo mount ${EFI_PARTITION} ${BOOT_MOUNT}/EFI
 
 # remount secrets for the copy-to-nixos step
 # sudo mkdir -p ${SECRETS_MOUNT}
@@ -720,6 +785,11 @@ fi
 echo -e "\033[1;34m[INFO]\033[0m Copying NixOS flake repo to its official destination..."
 sudo cp -r /home/nixos/nixos /mnt/etc
 
+sudo chown -R nixos:users /mnt/etc/nixos
+
+#git config --global --add safe.directory /mnt/etc/nixos
+#sudo git config --system --add safe.directory /mnt/etc/nixos
+
 echo -e "\033[1;34m[INFO]\033[0m Moving the hardware configuration to the host-specific path in the repo..."
 sudo mv /mnt/etc/nixos/hardware-configuration.nix /mnt/etc/nixos/hosts/$HOSTNAME/hardware.nix
 
@@ -735,7 +805,7 @@ HWC_PATH="/mnt/etc/nixos/hosts/$HOSTNAME/hardware.nix"
 
 # 🧠 Enable firmware, hardware, graphics, and QMK support
 echo -e "\033[1;34m[INFO]\033[0m Enabling firmware and QMK keyboard support..."
-sed -i '/^}/i\
+sudo sed -i '/^}/i\
   hardware.enableAllFirmware = true;\
   hardware.enableAllHardware = true;\
   hardware.graphics.enable = true;\
@@ -747,13 +817,23 @@ sudo mv /mnt/etc/nixos/configuration.nix /mnt/etc/nixos/configuration.nix.instal
 echo -e "\033[1;34m[INFO]\033[0m Extracting hardware-specific details for flake configuration..."
 
 # Get UUIDs for devices and filesystems
-boot_uuid=$(blkid -s UUID -o value ${DEFAULT_BOOT}2)
-boot_fs_uuid=$(blkid -s UUID -o value ${BOOT_PARTITION})
-efi_fs_uuid=$(blkid -s UUID -o value ${EFI_PARTITION})
+boot_fs_uuid=$(get_uuid "$BOOT_PARTITION")     # ext4 /boot
+efi_fs_uuid=$(get_uuid "$EFI_PARTITION")       # vfat /boot/EFI
+
 root_fs_uuid=$(findmnt -no UUID /mnt)
 var_fs_uuid=$(findmnt -no UUID /mnt/var)
 tmp_fs_uuid=$(findmnt -no UUID /mnt/tmp)
 home_fs_uuid=$(findmnt -no UUID /mnt/home)
+
+# If anything is empty, settle udev and retry once
+if [[ -z "$efi_fs_uuid" || -z "$boot_fs_uuid" ]]; then
+  sudo udevadm settle || true
+  [[ -z "$boot_fs_uuid" ]] && boot_fs_uuid=$(get_uuid "$BOOT_PARTITION")
+  [[ -z "$efi_fs_uuid"  ]] && efi_fs_uuid=$(get_uuid "$EFI_PARTITION")
+fi
+
+# (Optional) if you still want a separate “boot_uuid”, make it the same source:
+boot_uuid="$boot_fs_uuid"
 
 # UUID of the *unencrypted* mapper device
 #secrets_fs_uuid=$(blkid -s UUID -o value /dev/mapper/secrets_crypt)
@@ -802,7 +882,7 @@ echo -e "\033[1;34m[INFO]\033[0m Writing ${BOOT_MOUNT}/secrets/flakey.json ..."
 # ensure the directory exists on the *boot* filesystem
 sudo mkdir -p "${BOOT_MOUNT}/secrets"
 
-sudo cat > "${BOOT_MOUNT}/secrets/flakey.json" <<EOF
+sudo tee "${BOOT_MOUNT}/secrets/flakey.json" >/dev/null <<EOF
 {
   "PLACEHOLDER_NVME0":  "${nvme0_path}",
   "PLACEHOLDER_NVME1":  "${nvme1_path}",
@@ -814,7 +894,6 @@ sudo cat > "${BOOT_MOUNT}/secrets/flakey.json" <<EOF
   "PLACEHOLDER_VAR":   "/dev/disk/by-uuid/${var_fs_uuid}",
   "PLACEHOLDER_TMP":   "/dev/disk/by-uuid/${tmp_fs_uuid}",
   "PLACEHOLDER_HOME":  "/dev/disk/by-uuid/${home_fs_uuid}",
-
 
   "GIT_SMTP_PASS": "mlucmulyvpqlfprb"
 }

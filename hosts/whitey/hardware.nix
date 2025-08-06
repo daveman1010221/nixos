@@ -8,66 +8,44 @@
     [ (modulesPath + "/installer/scan/not-detected.nix")
     ];
 
-  boot.initrd.availableKernelModules = [
-    "nvme" "xhci_pci" "ahci" "thunderbolt" "usb_storage" "usbhid" "sd_mod"
-  ];
-  boot.initrd.kernelModules = [
-    "kvm-amd"
-    # device-mapper
-    "dm_mod"
-    "dm_crypt"
-
-    # crypto transforms needed by encrypted_keys/dm-crypt (cbc(aes), xts(aes))
-    "aesni_intel"
-    "crypto_simd"
-    "gf128mul"
-    "cryptd"
-    "cbc"                 # <-- you were missing this
-    "xts"
-    "sha256_generic"      # <-- use the real module name, not "sha256"
-
-    # only if you *really* need keyring helpers in initrd:
-    "encrypted_keys"
-    "trusted"
-  ];
+  boot.initrd.availableKernelModules = [ "nvme" "xhci_pci" "ahci" "thunderbolt" "usb_storage" "usbhid" "sd_mod" ];
+  boot.initrd.kernelModules = [ "dm-snapshot" ];
+  boot.kernelModules = [ "kvm-amd" ];
   boot.extraModulePackages = [ ];
 
   fileSystems."/" =
-    { device = "/dev/disk/by-uuid/9cd8a7ab-5284-42b2-b311-d90a8c3ea688";
+    { device = "/dev/disk/by-uuid/fafa580b-8964-4932-a7c7-d9dfb0cde0d5";
       fsType = "f2fs";
     };
 
   fileSystems."/tmp" =
-    { device = "/dev/disk/by-uuid/924083f6-e402-4104-9c4f-4e33985d1bbe";
+    { device = "/dev/disk/by-uuid/6246ddf8-b55e-4947-aab8-02a2d6db0009";
       fsType = "f2fs";
     };
 
   fileSystems."/var" =
-    { device = "/dev/disk/by-uuid/c022dacd-a1c3-4396-bbfe-a6e921623c03";
+    { device = "/dev/disk/by-uuid/de6f64cb-8981-47c0-819a-6d22a3752cfb";
       fsType = "f2fs";
     };
 
   fileSystems."/home" =
-    { device = "/dev/disk/by-uuid/fd16f42b-ed0f-4b7a-b631-8b3de3041b22";
+    { device = "/dev/disk/by-uuid/2c48b652-e8b0-4bbc-97fd-11b12422e349";
       fsType = "f2fs";
     };
 
   fileSystems."/boot" =
-    { device = "/dev/disk/by-uuid/5b92e829-7333-4602-9849-f82a645478f7";
+    { device = "/dev/disk/by-uuid/1f7ce0c3-fa0b-4356-8327-e4f91653e0eb";
       fsType = "ext4";
     };
 
   fileSystems."/boot/EFI" =
-    { device = "/dev/disk/by-uuid/31F1-0CF6";
+    { device = "/dev/disk/by-uuid/AB73-3475";
       fsType = "vfat";
       options = [ "fmask=0022" "dmask=0022" ];
     };
 
-
-  # boot.initrd.luks.devices."secrets_crypt".device = "/dev/disk/by-uuid/d3271a76-9608-4580-a6c2-d5f0399f0fd5";
-
   swapDevices =
-    [ { device = "/dev/disk/by-uuid/4710fa88-f7f7-4313-b1aa-21af96fff1bc"; }
+    [ { device = "/dev/disk/by-uuid/c03ef980-5625-4d56-8af0-17f1c497b34c"; }
     ];
 
   # Enables DHCP on each ethernet and wireless interface. In case of scripted networking
