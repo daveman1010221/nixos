@@ -1,6 +1,6 @@
 { hostPkgs, ... }:
 
 {
-  systemd.services."systemd-cryptsetup@secrets_crypt.service".enable = false;
+  systemd.services."systemd-cryptsetup@secrets_crypt".enable = false;
 }
 

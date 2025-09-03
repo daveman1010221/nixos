@@ -1,5 +1,5 @@
 { config, lib, secrets, ... }:
-# 
+ 
 {
   # boot.initrd.luks.devices.secrets_crypt = {
     # allowDiscards = true;

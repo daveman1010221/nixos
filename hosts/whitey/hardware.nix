@@ -9,44 +9,29 @@
     ];
 
   boot.initrd.availableKernelModules = [ "nvme" "xhci_pci" "ahci" "thunderbolt" "usb_storage" "usbhid" "sd_mod" ];
-  boot.initrd.kernelModules = [ "dm-snapshot" ];
+  boot.initrd.kernelModules = [
+    "kvm-amd"
+    # device-mapper
+    "dm_crypt"
+    "dm_mod"
+    "dm_snapshot"
+
+    # crypto transforms needed by encrypted_keys/dm_crypt (cbc(aes), xts(aes))
+    "aesni_intel"
+    "crypto_simd"
+    "gf128mul"
+    "cryptd"
+    "cbc"
+    "xts"
+    "sha256_generic"      # <-- use the real module name, not "sha256"
+
+    # only if you *really* need keyring helpers in initrd:
+    "encrypted_keys"
+    "trusted"
+  ];
+
   boot.kernelModules = [ "kvm-amd" ];
   boot.extraModulePackages = [ ];
-
-  fileSystems."/" =
-    { device = "/dev/disk/by-uuid/fafa580b-8964-4932-a7c7-d9dfb0cde0d5";
-      fsType = "f2fs";
-    };
-
-  fileSystems."/tmp" =
-    { device = "/dev/disk/by-uuid/6246ddf8-b55e-4947-aab8-02a2d6db0009";
-      fsType = "f2fs";
-    };
-
-  fileSystems."/var" =
-    { device = "/dev/disk/by-uuid/de6f64cb-8981-47c0-819a-6d22a3752cfb";
-      fsType = "f2fs";
-    };
-
-  fileSystems."/home" =
-    { device = "/dev/disk/by-uuid/2c48b652-e8b0-4bbc-97fd-11b12422e349";
-      fsType = "f2fs";
-    };
-
-  fileSystems."/boot" =
-    { device = "/dev/disk/by-uuid/1f7ce0c3-fa0b-4356-8327-e4f91653e0eb";
-      fsType = "ext4";
-    };
-
-  fileSystems."/boot/EFI" =
-    { device = "/dev/disk/by-uuid/AB73-3475";
-      fsType = "vfat";
-      options = [ "fmask=0022" "dmask=0022" ];
-    };
-
-  swapDevices =
-    [ { device = "/dev/disk/by-uuid/c03ef980-5625-4d56-8af0-17f1c497b34c"; }
-    ];
 
   # Enables DHCP on each ethernet and wireless interface. In case of scripted networking
   # (the default) this is the recommended approach. When using systemd-networkd it's
