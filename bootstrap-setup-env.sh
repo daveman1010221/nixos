@@ -13,17 +13,6 @@ nix profile install \
   github:NixOS/nixpkgs#tree \
   github:daveman1010221/nix-neovim || true
 
-echo "[INFO] Creating /etc/shells if missing and adding valid shells"
-sudo tee /etc/shells > /dev/null <<EOF
-/run/current-system/sw/bin/sh
-/run/current-system/sw/bin/bash
-$(which fish)
-/run/current-system/sw/bin/zsh
-EOF
-
-echo "[INFO] Setting Fish as default shell"
-chsh -s "$(which fish)"
-
 echo "[INFO] Writing Fish configuration to ~/.config/fish/config.fish"
 mkdir -p ~/.config/fish
 cat > ~/.config/fish/config.fish <<'EOF'
