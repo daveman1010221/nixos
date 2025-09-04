@@ -80,7 +80,7 @@ sed_initialize() {
 
     echo -e "\033[1;34m[INFO]\033[0m Initializing Opal on ${dev}… (log: $log)"
 
-    # 5) Expect script
+    # 5) Expect script (balanced braces; rc=98 on Host Not Authorized/BLOCKSID)
     DEV="$dev" SED_KEY="$SED_KEY" LOG_FILE="$log" NVME_BIN="${NVME_BIN:-nvme}" "${EXPECT_BIN:-expect}" -c '
         # Strict-ish expect harness
         set timeout 120
@@ -92,6 +92,9 @@ sed_initialize() {
 
         if {[catch {log_file -a $logf} err]} { send_user "DBG_INIT: cannot log to $logf: $err\n" }
         log_user 1
+
+        # Track special failure (BlockSID/prior owner)
+        set hostna 0
 
         # Track special failure (BlockSID/prior owner)
         set hostna 0
@@ -110,35 +113,40 @@ sed_initialize() {
         expect {
           -re {(?i)new.*pass(word)?|new.*key.*:} {
               send_user "DBG_INIT: NEW prompt -> sending (len=[string length $pw])\n"
-              safe_send "$pw\r"; exp_continue
+              safe_send "$pw\r"
+              exp_continue
           }
           -re {(?i)re-?enter.*pass(word)?|re-?enter.*key.*:} {
               send_user "DBG_INIT: RE-ENTER prompt -> sending\n"
-              safe_send "$pw\r"; exp_continue
+              safe_send "$pw\r"
+              exp_continue
           }
           -re {(?i)pass(word)?|key.*:} {
               send_user "DBG_INIT: generic pass/key prompt -> sending\n"
-              safe_send "$pw\r"; exp_continue
-          }
-          -re {(?i)(not supported|No such file|Operation not permitted|Permission denied|invalid argument)} {
-              send_user "DBG_INIT: ERROR from tool matched; bailing early\n"
+              safe_send "$pw\r"
               exp_continue
           }
-          -re {(?i)host[[:space:]]+not[[:space:]]+authorized} {
-              # Refused "take ownership" (BlockSID/prior owner). Mark and keep reading to EOF
-              # so we still capture any tool output.
+          -re {(?i)(not supported|No such file|Operation not permitted|Permission denied|invalid argument)} {
+              send_user "DBG_INIT: ERROR from tool matched; continuing to EOF for rc\n"
+              exp_continue
+          }
+          -re {(?i)host[^a-z]+not[^a-z]+authorized} {
+              # Refused "take ownership" (BlockSID/prior owner)
               send_user "DBG_INIT: HOST NOT AUTHORIZED detected\n"
               set hostna 1
               exp_continue
           }
           -re {(?i)block[- ]?sid} {
-              # Some firmwares print BLOCKSID instead
               send_user "DBG_INIT: BLOCKSID hint detected\n"
               set hostna 1
+              exp_continue
+          }
           timeout {
               send_user "DBG_INIT: TIMEOUT during initialize\n"
           }
-          eof {}
+          eof {
+              # fallthrough; we will read rc next
+          }
         }
 
         # Child exit code
@@ -154,6 +162,7 @@ sed_initialize() {
             exit 98
         } else {
             send_user "DBG_INIT: rc=$rc\n"; exit $rc
+            exit $rc
         }
     '
     rc=$?
