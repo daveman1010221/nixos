@@ -38,6 +38,7 @@ confirm() {
 #   - Returns the exit status of `nvme sed initialize`.
 sed_initialize() {
     local dev="$1"
+    echo "dev: ${dev}"
 
     if [[ "${DRY_RUN:-0}" == "1" ]]; then
         local serial; serial="$(ctrl_serial_for_dev "$dev")" || return 1
@@ -80,24 +81,27 @@ sed_initialize() {
 
     echo -e "\033[1;34m[INFO]\033[0m Initializing Opal on ${dev}… (log: $log)"
 
-    # 5) Expect script (balanced braces; rc=98 on Host Not Authorized/BLOCKSID)
+    # 5) Expect script (balanced braces; rc=98 Host Not Authorized/BLOCKSID, rc=97 Authority Locked Out)
     DEV="$dev" SED_KEY="$SED_KEY" LOG_FILE="$log" NVME_BIN="${NVME_BIN:-nvme}" "${EXPECT_BIN:-expect}" -c '
         # Strict-ish expect harness
-        set timeout 120
+        if {[info exists env(SED_INIT_TIMEOUT)]} {
+            set timeout [expr {int($env(SED_INIT_TIMEOUT))}]
+        } else {
+            set timeout 120
+        }
         proc safe_send {s} { send -- $s }
 
         set dev   $env(DEV)
+        send_user "DBG_INIT: dev: $dev\n"
         set pw    $env(SED_KEY)
         set logf  $env(LOG_FILE)
 
         if {[catch {log_file -a $logf} err]} { send_user "DBG_INIT: cannot log to $logf: $err\n" }
         log_user 1
 
-        # Track special failure (BlockSID/prior owner)
+        # Track special failures we care about at the call-site
         set hostna 0
-
-        # Track special failure (BlockSID/prior owner)
-        set hostna 0
+        set alock  0
 
         # Pre-discover for context (ignore failures)
         send_user "DBG_INIT: discover(before)\n"
@@ -136,6 +140,11 @@ sed_initialize() {
               set hostna 1
               exp_continue
           }
+          -re {(?i)authority[[:space:]]+locked[[:space:]]+out} {
+              send_user "DBG_INIT: AUTHORITY LOCKED OUT detected\n"
+              set alock 1
+              exp_continue
+          }
           -re {(?i)block[- ]?sid} {
               send_user "DBG_INIT: BLOCKSID hint detected\n"
               set hostna 1
@@ -158,10 +167,13 @@ sed_initialize() {
         if {[string length $post] > 0} { send_user "$post\n" }
 
         if {$hostna} {
-            send_user "DBG_INIT: rc=$rc (overriding -> 98 due to HOST NOT AUTHORIZED)\n"
+            send_user "DBG_INIT: rc=$rc (override -> 98 due to HOST NOT AUTHORIZED)\n"
             exit 98
+        } elseif {$alock} {
+            send_user "DBG_INIT: rc=$rc (override -> 97 due to AUTHORITY LOCKED OUT)\n"
+            exit 97
         } else {
-            send_user "DBG_INIT: rc=$rc\n"; exit $rc
+            send_user "DBG_INIT: rc=$rc\n"
             exit $rc
         }
     '
@@ -279,13 +291,20 @@ sed_revert() {
     local dev="$1"
     local mode="$2"
 
+    echo "sed_revert::dev: $dev"
+
     if [[ "${DRY_RUN:-0}" == "1" ]]; then
         echo "[DRY] nvme sed revert $dev --${mode}"
         return 0
     fi
 
     local logdir="${SED_LOG_DIR:-/tmp/sed-debug}"
-    local deadline="${SED_REVERT_TIMEOUT_S:-600}"
+
+    # Revert timeout (seconds). Prefer SED_REVERT_TIMEOUT, keep _S for back-compat.
+    local deadline="${SED_REVERT_TIMEOUT:-${SED_REVERT_TIMEOUT_S:-30}}"
+
+    # Sanity: force integer >= 0
+    if ! [[ "$deadline" =~ ^[0-9]+$ ]]; then deadline=30; fi
 
     # --- guardrails ---
     if [[ -z "$dev" || -z "$mode" ]]; then
@@ -314,8 +333,15 @@ sed_revert() {
 
     case "$mode" in
       normal)
-        DEV="$dev" LOG_FILE="$log" NVME_BIN="${NVME_BIN:-nvme}" "${EXPECT_BIN:-expect}" -c '
-            set timeout 180
+        DEV="$dev" LOG_FILE="$log" DEADLINE="$deadline" NVME_BIN="${NVME_BIN:-nvme}" "${EXPECT_BIN:-expect}" -c '
+            # Respect DEADLINE (seconds). 0 means "no timeout" (not recommended).
+            if {[info exists env(DEADLINE)]} {
+              set t [expr {int($env(DEADLINE))}]
+              if {$t < 0} { set t 0 }
+              set timeout $t
+            } else {
+              set timeout 30
+            }
             set dev   $env(DEV)
             set logf  $env(LOG_FILE)
             if {[catch {log_file -a $logf} err]} { send_user "DBG_REV(normal): cannot open $logf: $err\n" }
@@ -328,6 +354,7 @@ sed_revert() {
             if {[catch {spawn $env(NVME_BIN) sed revert $dev} err]} {
               send_user "DBG_REV(normal): spawn failed: $err\n"; exit 1
             }
+            send_user "DBG_REV(normal): timeout=${timeout}s\n"
 
             expect {
               -re {(?i)continue.*\\(y/n\\)\\?}       { send_user "DBG_REV(normal): Continue? -> y\n"; send -- "y\r"; exp_continue }
@@ -364,6 +391,7 @@ sed_revert() {
             log_user 1
 
             send_user "DBG_REV(destructive): discover(before)\n"
+            send_user "DBG_REV(destructive): dev: $dev\n"
             catch {exec $env(NVME_BIN) sed discover $dev} pre
             if {[string length $pre] > 0} { send_user "$pre\n" }
 
@@ -418,44 +446,72 @@ sed_revert() {
           echo -e "\033[1;31m[ERR]\033[0m PSID format invalid (expect A–Z0–9, length 8..64)."
           return 2
         fi
-        DEV="$dev" PSID="$PSID" LOG_FILE="$log" NVME_BIN="${NVME_BIN:-nvme}" "${EXPECT_BIN:-expect}" -c '
-            set timeout 300
-            set dev  $env(DEV)
-            set psid $env(PSID)
-            set logf $env(LOG_FILE)
-            if {[catch {log_file -a $logf} err]} { send_user "DBG_REV(psid): cannot open $logf: $err\n" }
+
+        # SED_PSID_TIMEOUT_S controls how long we’ll wait (default 45s). We also answer y/n prompts.
+        DEV="$dev" PSID="$PSID" LOG_FILE="$log" NVME_BIN="${NVME_BIN:-nvme}" DEADLINE="${SED_PSID_TIMEOUT_S:-45}" "${EXPECT_BIN:-expect}" -c '
+            # manual deadline loop so we can proactively send PSID if no prompt appears
+            set timeout 0
+            set dev      $env(DEV)
+            set psid     $env(PSID)
+            set logf     $env(LOG_FILE)
+            set deadline [expr {int($env(DEADLINE))}]
+            if {$deadline <= 0} { set deadline 45 }
+            set t0 [clock seconds]
+            set psid_sent 0
+            if {[catch {log_file -a $logf} err]} { send_user "DBG_PSID: cannot open $logf: $err\n" }
             log_user 1
 
-            send_user "DBG_REV(psid): discover(before)\n"
+            send_user "DBG_PSID: discover(before)\n"
             catch {exec $env(NVME_BIN) sed discover $dev} pre
             if {[string length $pre] > 0} { send_user "$pre\n" }
 
-            send_user "DBG_REV(psid): revert --psid starting\n"
+            send_user "DBG_PSID: revert --psid starting\n"
             if {[catch {spawn $env(NVME_BIN) sed revert $dev --psid} err]} {
-              send_user "DBG_REV(psid): spawn failed: $err\n"; exit 1
+              send_user "DBG_PSID: spawn failed: $err\n"; exit 1
             }
-            expect {
-              -re {(?i)destructive.*continue.*\\(y/n\\)\\?} {
-                 send_user "DBG_REV(psid): first confirm -> y\n"
-                 send -- "y\r"; exp_continue
+            set pid [exp_pid]
+
+            while {1} {
+              # hard deadline
+              if {$deadline > 0 && ([clock seconds]-$t0) >= $deadline} {
+                send_user "DBG_PSID: deadline reached, sending INT to $pid\n"
+                catch {exec kill -INT $pid}
+                after 1500
+                catch {exec kill -KILL $pid}
+                exit 124
               }
-              -re {(?i)are you sure.*\\(y/n\\)\\?} {
-                 send_user "DBG_REV(psid): second confirm -> y\n"
-                 send -- "y\r"; exp_continue
+              expect {
+                -re {(?i)destructive.*continue.*\\(y/n\\)\\?} {
+                   send_user "DBG_PSID: Continue? -> y\n"; send -- "y\r"; exp_continue
+                }
+                -re {(?i)are you sure.*\\(y/n\\)\\?} {
+                   send_user "DBG_PSID: Are you sure? -> y\n"; send -- "y\r"; exp_continue
+                }
+                -re {(?i)(enter|input|type).{0,30}psid.*:} {
+                   send_user "DBG_PSID: PSID prompt -> sending\n"
+                   send -- "$psid\r"; set psid_sent 1; exp_continue
+                }
+                -re {(?i)psid[[:space:]]*:} {
+                   send_user "DBG_PSID: PSID prompt -> sending\n"
+                   send -- "$psid\r"; set psid_sent 1; exp_continue
+                }
+                -re {(?i)(not supported|No such file|invalid argument|Operation not permitted|Permission denied)} {
+                   send_user "DBG_PSID: tool error seen; waiting for EOF\n"; exp_continue
+                }
+                timeout {
+                   # idle tick; if no visible prompt yet, send PSID proactively once
+                   after 1000
+                   if {!$psid_sent} {
+                     send_user "DBG_PSID: no prompt; proactively sending PSID\n"
+                     send -- "$psid\r"; set psid_sent 1
+                   }
+                }
+                eof { break }
               }
-              -re {(?i)psid.*:} {
-                 send_user "DBG_REV(psid): PSID prompt -> sending (not echoed)\n"
-                 send -- "$psid\r"; exp_continue
-              }
-              -re {(?i)(not supported|No such file|invalid argument|Operation not permitted|Permission denied)} {
-                 send_user "DBG_REV(psid): ERROR from tool; aborting\n"; exp_continue
-              }
-              timeout             { send_user "DBG_REV(psid): TIMEOUT\n"; exit 124 }
-              eof {}
             }
 
             set rc [lindex [wait] 3]
-            send_user "DBG_REV(psid): rc=$rc\n"
+            send_user "DBG_PSID: rc=$rc\n"
             exit $rc
         '
         make_log_user_readable "$log"
@@ -1238,12 +1294,13 @@ sed_reset_and_init() {
             # sed_psid_revert_then_die "$dev"
         fi
 
-        # Reset the controller to clear latches
-        local ctrl="${dev%n[0-9]*}"
-        if [[ -e "$ctrl" ]]; then
+        # Reset the controller, rescan, settle; then retry initialize once.
+        local ctrl
+        if ! ctrl="$(ctrl_node_for_dev "$dev")"; then ctrl=""; fi
+        if [[ -n "$ctrl" && -e "$ctrl" ]]; then
             do_or_echo "${NVME_BIN:-nvme}" reset "$ctrl"
         else
-            echo -e "\033[1;33m[WARN]\033[0m Controller node missing (${ctrl}); skipping nvme reset."
+            echo -e "\033[1;33m[WARN]\033[0m Could not derive controller node from ${dev}; skipping nvme reset."
         fi
 
         partprobe "$dev" 2>/dev/null || true
@@ -1258,15 +1315,15 @@ sed_reset_and_init() {
     local init_ok=0
     if ! sed_initialize "$dev"; then
         rc=$?
-        if [[ $rc -eq 98 ]]; then
-            echo -e "\033[1;33m[WARN]\033[0m ${dev}: Initialize failed with 'Host Not Authorized' (BlockSID)."
+        if [[ $rc -eq 98 || $rc -eq 97 ]]; then
+            echo -e "\033[1;33m[WARN]\033[0m ${dev}: Initialize failed with '$( [[ $rc -eq 98 ]] && echo Host Not Authorized || echo Authority Locked Out )'."
             if [[ "${FORCE_PSID:-1}" == "1" ]]; then
                 echo -e "\033[1;34m[INFO]\033[0m Falling back to PSID revert for ${dev}…"
-                sed_psid_revert_then_die "$dev"   # returns 90 and marks globals
+                sed_psid_revert_then_die "$dev"   # exits 90
                 return 90
             else
                 echo -e "\033[1;33m[WARN]\033[0m FORCE_PSID=0 -> not reverting automatically for ${dev}."
-                echo -e "\033[1;33m[HINT]\033[0m Re-run with FORCE_PSID=1 to PSID revert on BlockSID."
+                echo -e "\033[1;33m[HINT]\033[0m Re-run with FORCE_PSID=1 to PSID revert on this condition."
                 return 1
             fi
         fi
@@ -1277,55 +1334,45 @@ sed_reset_and_init() {
             echo -e "\033[1;33m[WARN]\033[0m initialize failed; attempting *destructive* revert and retry (FORCE_PSID=0)."
         fi
 
-        # Not BlockSID: try a destructive revert + retry once
+        # Generic init failure: try a destructive revert + retry once
+        echo "dev: ${dev}"
         if ! sed_revert "$dev" destructive; then
             echo -e "\033[1;33m[WARN]\033[0m Destructive revert failed on ${dev}."
+            if [[ "${FORCE_PSID:-1}" == "1" ]]; then
+                echo -e "\033[1;34m[INFO]\033[0m Falling back to PSID revert for ${dev}…"
+                sed_psid_revert_then_die "$dev"   # exits 90
+                return 90
+            fi
             return 1
         fi
-        local ctrl="${dev%%n*}"
-        [[ -e "$ctrl" ]] && do_or_echo "${NVME_BIN:-nvme}" reset "$ctrl"
+
+        # Reset the controller, rescan, settle; then retry initialize once.
+        # Derive /dev/nvmeX from /dev/nvmeXnY safely
+        local ctrl
+        if ! ctrl="$(ctrl_node_for_dev "$dev")"; then ctrl=""; fi
+        if [[ -n "$ctrl" && -e "$ctrl" ]]; then
+            do_or_echo "${NVME_BIN:-nvme}" reset "$ctrl"
+        else
+            echo -e "\033[1;33m[WARN]\033[0m Could not derive controller node from ${dev}; skipping nvme reset."
+        fi
+
         partprobe "$dev" 2>/dev/null || true
         udevadm settle || true
         sleep 1
         echo -e "\033[1;34m[INFO]\033[0m Retrying initialize on ${dev} after revert/reset…"
         if ! sed_initialize "$dev"; then
-            echo -e "\033[1;31m[ERR]\033[0m initialize retry failed."
+            rc=$?
+            echo -e "\033[1;31m[ERR]\033[0m initialize retry failed (rc=$rc)."
+            if [[ "${FORCE_PSID:-1}" == "1" ]]; then
+                echo -e "\033[1;34m[INFO]\033[0m Falling back to PSID revert for ${dev}…"
+                sed_psid_revert_then_die "$dev"   # exits 90
+                return 90
+            fi
             return 1
         fi
         init_ok=1
     else
         init_ok=1
-    fi
-
-    # Attempt a destructive revert as a latch/ownership breaker.
-    if ! sed_revert "$dev" destructive; then
-        echo -e "\033[1;33m[WARN]\033[0m Destructive revert failed on ${dev}."
-        if [[ "${FORCE_PSID:-0}" == "1" ]]; then
-            sed_psid_revert_then_die "$dev"   # exits 90
-            return 90
-        fi
-        echo -e "\033[1;31m[ERR]\033[0m initialize failed and destructive revert failed; stopping."
-        return 1
-    fi
-
-    # Reset the controller, rescan, settle; then retry initialize once.
-    # Derive /dev/nvmeX from /dev/nvmeXnY safely
-    local ctrl="${dev%n[0-9]*}"
-    if [[ -e "$ctrl" ]]; then
-        do_or_echo "${NVME_BIN:-nvme}" reset "$ctrl"
-    fi
-    partprobe "$dev" 2>/dev/null || true
-    udevadm settle || true
-    sleep 1
-
-    echo -e "\033[1;34m[INFO]\033[0m Retrying initialize on ${dev} after revert/reset…"
-    if ! sed_initialize "$dev"; then
-        if [[ "${FORCE_PSID:-0}" == "1" ]]; then
-            sed_psid_revert_then_die "$dev"   # exits 90
-            return 90
-        fi
-        echo -e "\033[1;31m[ERR]\033[0m initialize retry failed and FORCE_PSID!=1; stopping."
-        return 1
     fi
 
     # Give firmware a moment, then verify state
@@ -1472,6 +1519,17 @@ validate_sid() {
   return 1
 }
 
+# Deterministic per-drive key from MASTER_SECRET and controller serial
+# Output: upper-hex trimmed to SED_KEY_LEN (default 30)
+derive_sid_from_master() {
+  local secret="$1" serial="$2" n="${SED_KEY_LEN:-30}"
+  [[ -n "$secret" && -n "$serial" ]] || return 2
+  # Use sha256(secret||serial), upper-hex, trim length
+  local hex
+  hex="$(printf '%s' "${secret}::${serial}" | sha256sum | awk '{print $1}' | tr 'a-f' 'A-F')"
+  printf '%s' "${hex:0:${n}}"
+}
+
 # Map /dev/nvmeXnY (or partition /dev/nvmeXnYpZ) -> controller serial via sysfs.
 # Prints the serial on success; returns non-zero on failure.
 ctrl_serial_for_dev() {
@@ -1498,6 +1556,29 @@ ctrl_serial_for_dev() {
 
   # Trim any stray whitespace just in case
   sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' < "$serial_file"
+}
+
+# Map /dev/nvmeXnY (or /dev/nvmeXnYpZ) -> controller node /dev/nvmeX.
+# Usage: ctrl_node_for_dev /dev/nvme0n1[px]
+# Returns /dev/nvmeX on stdout; non-zero on failure.
+ctrl_node_for_dev() {
+  local dev="$1"
+  [[ -n "$dev" && -e "$dev" ]] || { echo "[ERR] ctrl_node_for_dev: no such device: $dev" >&2; return 1; }
+  local base; base="$(basename -- "$dev")"
+
+  # Accept nvmeXnY and nvmeXnYpZ forms
+  if [[ "$base" =~ ^(nvme[0-9]+)n[0-9]+(p[0-9]+)?$ ]]; then
+    # Capture the controller (nvmeX) and print /dev/nvmeX
+    printf '/dev/%s\n' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  # If a controller node was (incorrectly) passed in, just echo it back
+  if [[ "$base" =~ ^nvme[0-9]+$ ]]; then
+    printf '/dev/%s\n' "$base"
+    return 0
+  fi
+  echo "[ERR] ctrl_node_for_dev: not an NVMe namespace: $dev" >&2; return 1
 }
 
 # Ensure per-drive key files exist for a list of SERIALs.
@@ -1580,53 +1661,77 @@ ensure_sed_keys_for_serials() {
 }
 
 # Load SED_KEY for a given SERIAL (export for expect).
-# - Reads ${KEYS_DIR}/nvme-<SERIAL>.key
-# - Refuses missing/empty/bad-perm/bad-format keys
+# Strategy:
+#   1) If MASTER_SECRET is set (or after prompting), derive key deterministically.
+#   2) Otherwise, try existing key file: ${KEYS_DIR}/nvme-<SERIAL>.key
+#   3) If SED_WRITE_KEYS=1, write the derived key to that path (optional).
 sed_load_key_by_serial() {
   local s="$1"
   if [[ -z "$s" ]]; then
     echo "[ERR] sed_load_key_by_serial: missing serial" >&2
     return 2
   fi
-  if [[ $EUID -ne 0 ]]; then
-    echo "[ERR] sed_load_key_by_serial: must run as root" >&2
-    return 2
-  fi
-
   : "${KEYS_DIR:=${SECRETS_MOUNT:-/run/secrets}/keys}"
   local f="${KEYS_DIR}/nvme-${s}.key"
 
-  # Basic file checks
-  if [[ ! -r "$f" ]]; then
-    echo "[ERR] missing key file: $f" >&2
-    return 1
+  # 1) Derive from MASTER_SECRET if provided
+  if [[ -n "${MASTER_SECRET}" ]]; then
+    SED_KEY="$(derive_sid_from_master "${MASTER_SECRET}" "${s}")" || return 1
+    if ! validate_sid "$SED_KEY"; then
+      echo "[ERR] derived SID fails policy; adjust SED_KEY_LEN or MASTER_SECRET." >&2
+      return 3
+    fi
+    export SED_KEY SED_KEY_SOURCE="derived"
+    if [[ "${SED_WRITE_KEYS:-0}" == "1" ]]; then
+      # Writing requires root; keep non-fatal if not.
+      if [[ $EUID -eq 0 ]]; then
+        mkdir -p "$KEYS_DIR" && chmod 0700 "$KEYS_DIR" || true
+        printf '%s' "$SED_KEY" > "$f" && chmod 0600 "$f" || true
+      else
+        echo "[WARN] not root; skipping write of $f" >&2
+      fi
+    fi
+    return 0
   fi
-  # Optional: enforce owner/perms (root:root, 0400 or 0600)
-  if command -v stat >/dev/null 2>&1; then
-    local perm owner
-    perm="$(stat -c '%a' -- "$f" 2>/dev/null || echo '')"
-    owner="$(stat -c '%U:%G' -- "$f" 2>/dev/null || echo '')"
-    # non-fatal warn if looser than 0600 or non-root owner
-    if [[ "$owner" != "root:root" || ( "$perm" != 400 && "$perm" != 600 ) ]]; then
-      echo "[WARN] $f permissions/owner are loose (perm=$perm owner=$owner); consider chown root:root && chmod 0400" >&2
+
+  # 2) Attempt to read an existing key file
+  if [[ -r "$f" ]]; then
+    # Reading a file doesn’t strictly require root, but you likely run as root anyway.
+    local key
+    key="$(head -n1 -- "$f" 2>/dev/null || true)"
+    if [[ -z "$key" ]]; then
+      echo "[ERR] empty key in $f" >&2
+      return 1
+    fi
+    if ! validate_sid "$key"; then
+      echo "[ERR] key in $f fails policy (expect A–Z0–9_.:@#- length 8..32)" >&2
+      return 1
+    fi
+    SED_KEY="$key"
+    export SED_KEY SED_KEY_SOURCE="file:$f"
+    return 0
+  fi
+
+  # 3) Prompt MASTER_SECRET once, then derive
+  read -rsp "SED Master Secret (won't be stored): " MASTER_SECRET; echo
+  if [[ -z "${MASTER_SECRET}" ]]; then
+    echo "[ERR] MASTER_SECRET empty; cannot derive key." >&2
+    return 2
+  fi
+  SED_KEY="$(derive_sid_from_master "${MASTER_SECRET}" "${s}")" || return 1
+  if ! validate_sid "$SED_KEY"; then
+    echo "[ERR] derived SID fails policy; adjust SED_KEY_LEN or MASTER_SECRET." >&2
+    return 3
+  fi
+  export SED_KEY SED_KEY_SOURCE="derived"
+  if [[ "${SED_WRITE_KEYS:-0}" == "1" ]]; then
+    if [[ $EUID -eq 0 ]]; then
+      mkdir -p "$KEYS_DIR" && chmod 0700 "$KEYS_DIR" || true
+      printf '%s' "$SED_KEY" > "$f" && chmod 0600 "$f" || true
+    else
+      echo "[WARN] not root; skipping write of $f" >&2
     fi
   fi
-
-  # Read first line as the SID (command substitution strips trailing newline)
-  local key
-  key="$(head -n1 -- "$f" 2>/dev/null || true)"
-
-  if [[ -z "$key" ]]; then
-    echo "[ERR] empty key in $f" >&2
-    return 1
-  fi
-  if ! validate_sid "$key"; then
-    echo "[ERR] key in $f fails policy (expect A–Z0–9_.:@#- length 8..32)" >&2
-    return 1
-  fi
-
-  SED_KEY="$key"
-  export SED_KEY
   return 0
 }
 
@@ -1804,6 +1909,23 @@ make_log_user_readable() {
 : "${SUDO_BIN:=sudo}"
 : "${NVME_BIN:=nvme}"
 : "${EXPECT_BIN:=expect}"
+
+# SED master secret:
+#   Provide via env MASTER_SECRET (recommended), or the script will prompt once.
+#   Keys are derived per-drive from MASTER_SECRET + controller serial.
+: "${MASTER_SECRET:=}"
+
+# Write materialized key files? 0 = no (default; keys are derived), 1 = yes.
+: "${SED_WRITE_KEYS:=0}"
+
+# Key length policy (nvme-cli allows 8..32 for Opal). We use 30 by default.
+: "${SED_KEY_LEN:=30}"
+
+# Expect timeouts (seconds). You can override at runtime:
+#   SED_REVERT_TIMEOUT=30 SED_INIT_TIMEOUT=90 ./setup.sh
+
+: "${SED_INIT_TIMEOUT:=90}"
+: "${SED_REVERT_TIMEOUT:=30}"
 
 # Auto-PSID fallback on initialize failure ("Host Not Authorized")
 : "${FORCE_PSID:=1}"
@@ -1988,6 +2110,7 @@ echo -e "\033[1;34m[INFO]\033[0m Proceeding with SED hardware crypto-wipe & init
 set +e
 overall_fail=0
 for dev in $(list_nvme_namespaces); do
+  echo "dev: ${dev}"
   sed_reset_and_init "$dev"
   rc=$?
   case "$rc" in
@@ -2180,8 +2303,7 @@ do_or_echo cp -r /home/nixos/nixos /mnt/etc
 
 do_or_echo chown -R nixos:users /mnt/etc/nixos
 
-git config --global --add safe.directory /mnt/etc/nixos
-do_or_echo git config --system --add safe.directory /mnt/etc/nixos
+# do_or_echo git config --system --add safe.directory /mnt/etc/nixos
 
 echo -e "\033[1;34m[INFO]\033[0m Moving the hardware configuration to the host-specific path in the repo..."
 do_or_echo mv /mnt/etc/nixos/hardware-configuration.nix /mnt/etc/nixos/hosts/$HOSTNAME/hardware.nix
