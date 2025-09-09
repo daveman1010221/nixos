@@ -212,13 +212,18 @@ sed_psid_revert_then_die() {
     local PSID RAW
     while :; do
         read -rsp "Enter PSID for ${dev} [serial: ${serial}] (uppercase, no dashes/spaces): " RAW; echo
+
         # Normalize: strip spaces and force uppercase; then validate.
-        PSID="$(printf '%s' "$RAW" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+        PSID="$(printf '%s' "$RAW" | tr -d '[:space:]')"
+
         # Policy: A–Z/0–9, len 8..64 (most are 32–34)
-        if [[ "$PSID" =~ ^[A-Z0-9]{8,64}$ ]]; then
+        if [[ "$PSID" =~ ^[A-Za-z0-9]{8,64}$ ]]; then
             break
         fi
-        echo -e "\033[1;31m[ERR]\033[0m PSID format looks wrong. Use uppercase A–Z/0–9, no separators."
+
+        read -rsp "Enter PSID for ${dev} [serial: ${serial}] (case-sensitive, no dashes/spaces): " RAW; echo
+
+        echo -e "\033[1;31m[ERR]\033[0m PSID format looks wrong. Use A–Z/a–z/0–9, no separators."
     done
 
     # 3) Private log
@@ -300,8 +305,8 @@ sed_revert() {
 
     local logdir="${SED_LOG_DIR:-/tmp/sed-debug}"
 
-    # Revert timeout (seconds). Prefer SED_REVERT_TIMEOUT, keep _S for back-compat.
-    local deadline="${SED_REVERT_TIMEOUT:-${SED_REVERT_TIMEOUT_S:-30}}"
+    # Default the destructive revert watchdog to something sane (overridable)
+    local deadline="${SED_REVERT_TIMEOUT_S:-30}"
 
     # Sanity: force integer >= 0
     if ! [[ "$deadline" =~ ^[0-9]+$ ]]; then deadline=30; fi
@@ -430,96 +435,56 @@ sed_revert() {
         return $? ;;
 
       psid)
-        # Helpful: show controller serial in the prompt
-        local serial="(unknown)"
-        serial="$(ctrl_serial_for_dev "$dev" 2>/dev/null || true)"; [[ -n "$serial" ]] || serial="(unknown)"
-        local PSID RAW
-        while :; do
-          read -rsp "Enter PSID for ${dev} [serial: ${serial}] (uppercase, no dashes/spaces): " RAW; echo
-          PSID="$(printf '%s' "$RAW" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
-          [[ "$PSID" =~ ^[A-Z0-9]{8,64}$ ]] && break
-          echo -e "\033[1;31m[ERR]\033[0m PSID format looks wrong. Use uppercase A–Z/0–9, no separators."
-        done
+          # Helpful: show controller serial in the prompt
+          local serial="(unknown)"
+          serial="$(ctrl_serial_for_dev "$dev" 2>/dev/null || true)"; [[ -n "$serial" ]] || serial="(unknown)"
+          local PSID RAW
+          while :; do
+            read -rsp "Enter PSID for ${dev} [serial: ${serial}] (case-sensitive, no dashes/spaces): " RAW; echo
+            # Keep exact case; just strip whitespace
+            PSID="$(printf '%s' "$RAW" | tr -d '[:space:]')"
+            [[ "$PSID" =~ ^[A-Za-z0-9]{8,64}$ ]] && break
+            echo -e "\033[1;31m[ERR]\033[0m PSID format looks wrong. Use A–Z/a–z/0–9, no separators."
+          done
 
-        # extra sanity
-        if ! [[ "$PSID" =~ ^[A-Z0-9]{8,64}$ ]]; then
-          echo -e "\033[1;31m[ERR]\033[0m PSID format invalid (expect A–Z0–9, length 8..64)."
-          return 2
-        fi
+          # Final sanity
+          if ! [[ "$PSID" =~ ^[A-Za-z0-9]{8,64}$ ]]; then
+            echo -e "\033[1;31m[ERR]\033[0m PSID format invalid (expect [A-Za-z0-9], length 8..64)."
+            return 2
+          fi
 
-        # SED_PSID_TIMEOUT_S controls how long we’ll wait (default 45s). We also answer y/n prompts.
-        DEV="$dev" PSID="$PSID" LOG_FILE="$log" NVME_BIN="${NVME_BIN:-nvme}" DEADLINE="${SED_PSID_TIMEOUT_S:-45}" "${EXPECT_BIN:-expect}" -c '
-            # manual deadline loop so we can proactively send PSID if no prompt appears
-            set timeout 0
-            set dev      $env(DEV)
-            set psid     $env(PSID)
-            set logf     $env(LOG_FILE)
-            set deadline [expr {int($env(DEADLINE))}]
-            if {$deadline <= 0} { set deadline 45 }
-            set t0 [clock seconds]
-            set psid_sent 0
-            if {[catch {log_file -a $logf} err]} { send_user "DBG_PSID: cannot open $logf: $err\n" }
-            log_user 1
+          # PSID path: some firmwares show *two* confirmations before PSID prompt.
+          # Provide shorter default timeout; let env override via SED_PSID_TIMEOUT_S.
+          DEV="$dev" PSID="$PSID" LOG_FILE="$log" NVME_BIN="${NVME_BIN:-nvme}" "${EXPECT_BIN:-expect}" -c '
+              if {[info exists env(SED_PSID_TIMEOUT_S)]} { set timeout [expr {int($env(SED_PSID_TIMEOUT_S))}] } else { set timeout 120 }
+              set dev  $env(DEV)
+              set psid $env(PSID)
+              set logf $env(LOG_FILE)
+              if {[catch {log_file -a $logf} err]} { send_user "DBG_PSID: cannot open $logf: $err\n" }
+              log_user 1
 
-            send_user "DBG_PSID: discover(before)\n"
-            catch {exec $env(NVME_BIN) sed discover $dev} pre
-            if {[string length $pre] > 0} { send_user "$pre\n" }
+              send_user "DBG_PSID: discover(before)\n"
+              catch {exec $env(NVME_BIN) sed discover $dev} pre
+              if {[string length $pre] > 0} { send_user "$pre\n" }
 
-            send_user "DBG_PSID: revert --psid starting\n"
-            if {[catch {spawn $env(NVME_BIN) sed revert $dev --psid} err]} {
-              send_user "DBG_PSID: spawn failed: $err\n"; exit 1
-            }
-            set pid [exp_pid]
-
-            while {1} {
-              # hard deadline
-              if {$deadline > 0 && ([clock seconds]-$t0) >= $deadline} {
-                send_user "DBG_PSID: deadline reached, sending INT to $pid\n"
-                catch {exec kill -INT $pid}
-                after 1500
-                catch {exec kill -KILL $pid}
-                exit 124
+              if {[catch {spawn $env(NVME_BIN) sed revert $dev --psid} err]} {
+                send_user "DBG_PSID: spawn failed: $err\n"; exit 1
               }
               expect {
-                -re {(?i)destructive.*continue.*\\(y/n\\)\\?} {
-                   send_user "DBG_PSID: Continue? -> y\n"; send -- "y\r"; exp_continue
-                }
-                -re {(?i)are you sure.*\\(y/n\\)\\?} {
-                   send_user "DBG_PSID: Are you sure? -> y\n"; send -- "y\r"; exp_continue
-                }
-                -re {(?i)(enter|input|type).{0,30}psid.*:} {
-                   send_user "DBG_PSID: PSID prompt -> sending\n"
-                   send -- "$psid\r"; set psid_sent 1; exp_continue
-                }
-                -re {(?i)psid[[:space:]]*:} {
-                   send_user "DBG_PSID: PSID prompt -> sending\n"
-                   send -- "$psid\r"; set psid_sent 1; exp_continue
-                }
+                -re {(?i)destructive.*continue.*\\(y/n\\)\\?} { send_user "DBG_PSID: confirm#1 -> y\n"; send -- "y\r"; exp_continue }
+                -re {(?i)are you sure.*\\(y/n\\)\\?}          { send_user "DBG_PSID: confirm#2 -> y\n"; send -- "y\r"; exp_continue }
+                -re {(?i)psid.*:}                             { send_user "DBG_PSID: PSID prompt -> sending (not echoed)\n"; send -- "$psid\r"; exp_continue }
                 -re {(?i)(not supported|No such file|invalid argument|Operation not permitted|Permission denied)} {
-                   send_user "DBG_PSID: tool error seen; waiting for EOF\n"; exp_continue
-                }
-                timeout {
-                   # idle tick; if no visible prompt yet, send PSID proactively once
-                   after 1000
-                   if {!$psid_sent} {
-                     send_user "DBG_PSID: no prompt; proactively sending PSID\n"
-                     send -- "$psid\r"; set psid_sent 1
-                   }
-                }
-                eof { break }
+                                                               send_user "DBG_PSID: ERROR from tool; continuing to EOF\n"; exp_continue }
+                timeout                                       { send_user "DBG_PSID: TIMEOUT during revert\n" }
+                eof {}
               }
-            }
-
-            set rc [lindex [wait] 3]
-            send_user "DBG_PSID: rc=$rc\n"
-            exit $rc
-        '
-        make_log_user_readable "$log"
-        return $? ;;
-
-      *)
-        echo -e "\033[1;31m[ERR]\033[0m sed_revert: unknown mode: $mode" >&2
-        return 2 ;;
+              set rc [lindex [wait] 3]
+              send_user "DBG_PSID: rc=$rc\n"
+              exit $rc
+          '
+          make_log_user_readable "$log"
+          return $? ;;
     esac
 }
 
@@ -1279,36 +1244,46 @@ sed_reset_and_init() {
         return 2
     fi
 
+    # Map to controller serial and load/derive the per-drive key (idempotent)
+    local serial
+    serial="$(ctrl_serial_for_dev "$dev")" || { echo "[ERR] cannot read controller serial for $dev"; return 2; }
+    if ! sed_load_key_by_serial "$serial"; then
+      echo -e "\033[1;31m[ERR]\033[0m could not obtain SED key for serial ${serial}" >&2
+      return 2
+    fi
+
     # Snapshot pre-state (tolerate parse failures)
     local en before_locked
     en="$(sed_enabled "$dev" || true)"
     before_locked="$(sed_locked "$dev" || true)"
     echo -e "\033[1;34m[INFO]\033[0m ${dev} pre-state: Enabled=${en:-<unknown>}, Locked=${before_locked:-<unknown>}"
 
-    # If Opal is clearly active/locked, revert first (most likely prior owner).
-    if [[ "$en" == "Yes" || "$before_locked" == "Yes" ]]; then
-        echo -e "\033[1;33m[WARN]\033[0m ${dev} appears active or locked; attempting *destructive* revert…"
-        if ! sed_revert "$dev" destructive; then
-            echo -e "\033[1;33m[WARN]\033[0m Destructive revert failed on ${dev}. You may need a PSID revert."
-            # Optional hard fallback:
-            # sed_psid_revert_then_die "$dev"
-        fi
-
-        # Reset the controller, rescan, settle; then retry initialize once.
-        local ctrl
-        if ! ctrl="$(ctrl_node_for_dev "$dev")"; then ctrl=""; fi
-        if [[ -n "$ctrl" && -e "$ctrl" ]]; then
-            do_or_echo "${NVME_BIN:-nvme}" reset "$ctrl"
-        else
-            echo -e "\033[1;33m[WARN]\033[0m Could not derive controller node from ${dev}; skipping nvme reset."
-        fi
-
-        partprobe "$dev" 2>/dev/null || true
-        udevadm settle || true
-        sleep 1
-    else
-        # Factory-looking: try initialize first (least destructive).
-        echo -e "\033[1;34m[INFO]\033[0m ${dev}: Opal not enabled and not locked; trying initialize without revert."
+    # Fast idempotency paths:
+    #  - Enabled=Yes, Locked=No -> we likely already own it: verify lock/unlock and exit OK.
+    #  - Enabled=Yes, Locked=Yes -> try to unlock with our key before anything destructive.
+    if [[ "$en" == "Yes" && "$before_locked" == "No" ]]; then
+      echo -e "\033[1;34m[INFO]\033[0m ${dev}: Opal enabled & unlocked; verifying lock/unlock and skipping initialize."
+      if ! sed_lock "$dev"; then
+        echo -e "\033[1;33m[WARN]\033[0m Lock attempt failed; short retry…" ; sleep 1 ; sed_lock "$dev" || { echo -e "\033[1;31m[ERR]\033[0m lock failed on ${dev}"; return 1; }
+      fi
+      sleep 1
+      if ! sed_unlock "$dev"; then
+        echo -e "\033[1;33m[WARN]\033[0m Unlock attempt failed; short retry…" ; sleep 1 ; sed_unlock "$dev" || { echo -e "\033[1;31m[ERR]\033[0m unlock failed on ${dev}"; return 1; }
+      fi
+      echo -e "\033[1;32m[OK]\033[0m ${dev} already initialized; ownership verified."
+      return 0
+    fi
+    if [[ "$en" == "Yes" && "$before_locked" == "Yes" ]]; then
+      echo -e "\033[1;34m[INFO]\033[0m ${dev}: Opal enabled & LOCKED; attempting unlock with current key."
+      if sed_unlock "$dev"; then
+        echo -e "\033[1;32m[OK]\033[0m ${dev} unlocked with current key; skipping re-initialize."
+        return 0
+      fi
+      echo -e "\033[1;33m[WARN]\033[0m ${dev}: unlock with current key failed; will consider revert paths."
+    fi
+    # Else: looks factory-ish (Enabled=No), proceed to initialize first.
+    if [[ "$en" != "Yes" && "$before_locked" != "Yes" ]]; then
+      echo -e "\033[1;34m[INFO]\033[0m ${dev}: Opal not enabled and not locked; trying initialize without revert."
     fi
 
     # Initialize (sets the new SID/Admin and enables Locking SP)
@@ -1327,48 +1302,35 @@ sed_reset_and_init() {
                 return 1
             fi
         fi
-        if [[ "${FORCE_PSID:-0}" == "1" ]]; then
-            # Common cause: "Host Not Authorized" / BlockSID latch.
-            echo -e "\033[1;33m[WARN]\033[0m initialize failed; will try *destructive* revert, reset controller, and retry before PSID."
-        else
-            echo -e "\033[1;33m[WARN]\033[0m initialize failed; attempting *destructive* revert and retry (FORCE_PSID=0)."
-        fi
 
-        # Generic init failure: try a destructive revert + retry once
-        echo "dev: ${dev}"
+        echo -e "\033[1;33m[WARN]\033[0m initialize failed; will try *destructive* revert, reset controller, and retry once."
         if ! sed_revert "$dev" destructive; then
-            echo -e "\033[1;33m[WARN]\033[0m Destructive revert failed on ${dev}."
-            if [[ "${FORCE_PSID:-1}" == "1" ]]; then
-                echo -e "\033[1;34m[INFO]\033[0m Falling back to PSID revert for ${dev}…"
-                sed_psid_revert_then_die "$dev"   # exits 90
-                return 90
-            fi
-            return 1
+          echo -e "\033[1;33m[WARN]\033[0m Destructive revert failed on ${dev}."
+          if [[ "${FORCE_PSID:-0}" == "1" ]]; then
+            sed_psid_revert_then_die "$dev"; return 90
+          fi
+          return 1
         fi
 
-        # Reset the controller, rescan, settle; then retry initialize once.
-        # Derive /dev/nvmeX from /dev/nvmeXnY safely
-        local ctrl
-        if ! ctrl="$(ctrl_node_for_dev "$dev")"; then ctrl=""; fi
+        # Controller reset and settle
+        local ctrl=""
+        ctrl="$(ctrl_node_for_dev "$dev" 2>/dev/null || true)"
         if [[ -n "$ctrl" && -e "$ctrl" ]]; then
-            do_or_echo "${NVME_BIN:-nvme}" reset "$ctrl"
+          do_or_echo "${NVME_BIN:-nvme}" reset "$ctrl" || true
         else
-            echo -e "\033[1;33m[WARN]\033[0m Could not derive controller node from ${dev}; skipping nvme reset."
+          echo -e "\033[1;33m[WARN]\033[0m Could not derive controller node from ${dev}; skipping nvme reset."
         fi
-
         partprobe "$dev" 2>/dev/null || true
         udevadm settle || true
         sleep 1
         echo -e "\033[1;34m[INFO]\033[0m Retrying initialize on ${dev} after revert/reset…"
         if ! sed_initialize "$dev"; then
-            rc=$?
-            echo -e "\033[1;31m[ERR]\033[0m initialize retry failed (rc=$rc)."
-            if [[ "${FORCE_PSID:-1}" == "1" ]]; then
-                echo -e "\033[1;34m[INFO]\033[0m Falling back to PSID revert for ${dev}…"
-                sed_psid_revert_then_die "$dev"   # exits 90
-                return 90
-            fi
-            return 1
+          if [[ "${FORCE_PSID:-0}" == "1" ]]; then
+            echo -e "\033[1;34m[INFO]\033[0m Falling back to PSID revert for ${dev}…"
+            sed_psid_revert_then_die "$dev"; return 90
+          fi
+          echo -e "\033[1;31m[ERR]\033[0m initialize retry failed."
+          return 1
         fi
         init_ok=1
     else
