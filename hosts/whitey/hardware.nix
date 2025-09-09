@@ -8,68 +8,80 @@
     [ (modulesPath + "/installer/scan/not-detected.nix")
     ];
 
-  boot.initrd.availableKernelModules = [
-    "aesni_intel"
-    "aes_x86_64"
-    "ahci"
-    "cbc"
+    # Ensure the initrd includes necessary modules for encryption, RAID, and filesystems
+  boot.initrd.availableKernelModules = lib.mkForce [
+    "nls_cp437"
+    "nls_iso8859_1"
+    "crypto_null"
     "cryptd"
-    "crypto_simd"
-    "dm_crypt"
-    "dm_mod"
-    "dm_snapshot"
-    "encrypted_keys"
-    "gf128mul"
-    "kvm-amd"
-    "nvme"
-    "sd_mod"
+    "sha256"
     "sha256_generic"
-    "thunderbolt"
-    "trusted"
+    "vmd"
+
+    # crypto
+    "aesni_intel"     # The gold standard for FIPS 140-2/3 compliance
+                      # Hardware-accelerate AES within the Intel CPU
+    "gf128mul"
+    "crypto_simd"
+    "dm_crypt"        # LUKS encryption support for device mapper storage infrastructure
+    "essiv"           # Encrypted Salt-Sector Initialization Vector is a transform for various encryption modes, mostly supporting block device encryption
+    "authenc"
+    "xts"             # XEX-based tweaked-codebook mode with ciphertext stealing -- like essiv, is designed specifically for block device encryption
+
+    # filesystems
+    "ext4"            # Old time linux filesystem, used on the encrypted USB boot volume. Required because grub doesn't support F2FS yet.
+    "crc16"
+    "mbcache"
+    "jbd2"
+    "f2fs"            # Flash-friendly filesystem support -- the top-layer of our storage stack
+    "lz4_compress"
+    "lz4hc_compress"
+    "vfat"            # Windows FAT volumes, such as the FAT12 EFI partition
+    "fat"
+
+    # storage
+    "nvme"            # NVME drive support
+    "nvme_core"
+    "nvme_auth"
+    "raid0"           # Software RAID0 via mdadm
+    "usb_storage"     # Generic USB storage support
+    "scsi_mod"
+    "scsi_common"
+    "libata"
+    "dm_mod"          # Device mapper infrastructure
+    "dm_snapshot"
+    "dm_bufio"
+    "dax"
+    "md_mod"
+
+    # hardware support modules
+    "ahci"            # SATA disk support
+    "kvm-amd"
+    "libahci"
+    "sd_mod"          # SCSI disk support (/dev/sdX)
+    "uas"             # USB attached SCSI (booting from USB)
+    "usbcore"         # USB support
     "usbhid"
-    "usb_storage"
-    "xhci_pci"
+    "i2c_hid"
+    "hid_multitouch"
+    "hid_sensor_hub"
+    "intel_ishtp_hid"
+    "hid_generic"
+    "xhci_hcd"        # USB 3.x support
+    "xhci_pci"        # USB 3.x support
+    "thunderbolt"
+  ];
+
+  # Define LUKS devices, including the encrypted /boot and NVMe devices
+  boot.initrd.luks.cryptoModules = [
+    "aesni_intel"
+    "essiv"
     "xts"
+    "sha256"
   ];
 
   boot.initrd.kernelModules = [
-    "aesni_intel"
-    "aes_x86_64"
-    "ahci"
-    "cbc"
-    "cryptd"
-    "crypto_simd"
-    "dm_crypt"
-    "dm_mod"
-    "dm_snapshot"
-    "encrypted_keys"
-    "gf128mul"
     "kvm-amd"
-    "nvme"
-    "sd_mod"
-    "sha256_generic"
-    "thunderbolt"
-    "trusted"
-    "usbhid"
-    "usb_storage"
-    "xhci_pci"
-    "xts"
-  ];
-
-  boot.initrd.luks.cryptoModules = [
-    "dm-crypt"
-    "aes"
-    "aes_x86_64"
-    "xts"
-    "cbc"
-    "gcm"
-    "ghash"
-    "sha1"
-    "sha1"
-    "sha256"
-    "sha512"
-    "cryptd"
-    "crc32c-intel"
   ];
 
   boot.initrd.systemd.enable = true;
@@ -87,7 +99,7 @@
   # networking.interfaces.wlp16s0.useDHCP = lib.mkDefault true;
 
   nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
-  hardware.cpu.amd.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
+  hardware.cpu.amd.updateMicrocode = true;
   hardware.enableAllFirmware = true;
   hardware.enableAllHardware = true;
   hardware.graphics.enable = true;
