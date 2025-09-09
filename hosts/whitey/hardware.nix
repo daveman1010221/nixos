@@ -8,27 +8,84 @@
     [ (modulesPath + "/installer/scan/not-detected.nix")
     ];
 
-  boot.initrd.availableKernelModules = [ "nvme" "xhci_pci" "ahci" "thunderbolt" "usb_storage" "usbhid" "sd_mod" ];
+    # Ensure the initrd includes necessary modules for encryption, RAID, and filesystems
+  boot.initrd.availableKernelModules = lib.mkForce [
+    "nls_cp437"
+    "nls_iso8859_1"
+    "crypto_null"
+    "cryptd"
+    "sha256"
+    "sha256_generic"
+    "vmd"
+
+    # crypto
+    "aesni_intel"     # The gold standard for FIPS 140-2/3 compliance
+                      # Hardware-accelerate AES within the Intel CPU
+    "gf128mul"
+    "crypto_simd"
+    "dm_crypt"        # LUKS encryption support for device mapper storage infrastructure
+    "essiv"           # Encrypted Salt-Sector Initialization Vector is a transform for various encryption modes, mostly supporting block device encryption
+    "authenc"
+    "xts"             # XEX-based tweaked-codebook mode with ciphertext stealing -- like essiv, is designed specifically for block device encryption
+
+    # filesystems
+    "ext4"            # Old time linux filesystem, used on the encrypted USB boot volume. Required because grub doesn't support F2FS yet.
+    "crc16"
+    "mbcache"
+    "jbd2"
+    "f2fs"            # Flash-friendly filesystem support -- the top-layer of our storage stack
+    "lz4_compress"
+    "lz4hc_compress"
+    "vfat"            # Windows FAT volumes, such as the FAT12 EFI partition
+    "fat"
+
+    # storage
+    "nvme"            # NVME drive support
+    "nvme_core"
+    "nvme_auth"
+    "raid0"           # Software RAID0 via mdadm
+    "usb_storage"     # Generic USB storage support
+    "scsi_mod"
+    "scsi_common"
+    "libata"
+    "dm_mod"          # Device mapper infrastructure
+    "dm_snapshot"
+    "dm_bufio"
+    "dax"
+    "md_mod"
+
+    # hardware support modules
+    "ahci"            # SATA disk support
+    "kvm-amd"
+    "libahci"
+    "sd_mod"          # SCSI disk support (/dev/sdX)
+    "uas"             # USB attached SCSI (booting from USB)
+    "usbcore"         # USB support
+    "usbhid"
+    "i2c_hid"
+    "hid_multitouch"
+    "hid_sensor_hub"
+    "intel_ishtp_hid"
+    "hid_generic"
+    "xhci_hcd"        # USB 3.x support
+    "xhci_pci"        # USB 3.x support
+    "thunderbolt"
+  ];
+
+  # Define LUKS devices, including the encrypted /boot and NVMe devices
+  boot.initrd.luks.cryptoModules = [
+    "aesni_intel"
+    "essiv"
+    "xts"
+    "sha256"
+  ];
+
   boot.initrd.kernelModules = [
     "kvm-amd"
-    # device-mapper
-    "dm_crypt"
-    "dm_mod"
-    "dm_snapshot"
-
-    # crypto transforms needed by encrypted_keys/dm_crypt (cbc(aes), xts(aes))
-    "aesni_intel"
-    "crypto_simd"
-    "gf128mul"
-    "cryptd"
-    "cbc"
-    "xts"
-    "sha256_generic"      # <-- use the real module name, not "sha256"
-
-    # only if you *really* need keyring helpers in initrd:
-    "encrypted_keys"
-    "trusted"
   ];
+
+  boot.initrd.systemd.enable = true;
+  boot.initrd.systemd.emergencyAccess = true;
 
   boot.kernelModules = [ "kvm-amd" ];
   boot.extraModulePackages = [ ];
@@ -47,5 +104,47 @@
   hardware.enableAllHardware = true;
   hardware.graphics.enable = true;
   hardware.keyboard.qmk.enable = true;
+
+  fileSystems."/" =
+    { device = "/dev/disk/by-uuid/98f0bc96-4d08-4ac3-a779-ac022d1dbf4d";
+      fsType = "f2fs";
+    };
+
+  fileSystems."/tmp" =
+    { device = "/dev/disk/by-uuid/6deb5430-a419-40eb-826d-5ba1bfd29720";
+      fsType = "f2fs";
+    };
+
+  fileSystems."/var" =
+    { device = "/dev/disk/by-uuid/e8a660ae-61f8-46f1-8d68-16d1168e4e11";
+      fsType = "f2fs";
+    };
+
+  fileSystems."/home" =
+    { device = "/dev/disk/by-uuid/8e367057-beb6-4e29-a803-2bb7e932ebe5";
+      fsType = "f2fs";
+    };
+
+  fileSystems."/boot" =
+    { device = "/dev/disk/by-uuid/3d155266-a770-40d2-83cf-2b3ffb03c0ac";
+      fsType = "ext4";
+    };
+
+  fileSystems."/boot/EFI" =
+    { device = "/dev/disk/by-uuid/3F90-C5AF";
+      fsType = "vfat";
+      options = [ "fmask=0022" "dmask=0022" ];
+    };
+
+  fileSystems."/secrets" =
+    { device = "/dev/disk/by-uuid/edf2e240-70a3-442b-bdb1-d77d215c2576";
+      fsType = "ext4";
+    };
+
+  boot.initrd.luks.devices."secrets_crypt".device = "/dev/disk/by-uuid/8efa51df-afa6-4eae-b6c8-05c15272298c";
+
+  swapDevices =
+    [ { device = "/dev/disk/by-uuid/7d42ad61-3082-4788-89eb-f2a26a571d53"; }
+    ];
 
 }
