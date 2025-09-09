@@ -8,27 +8,72 @@
     [ (modulesPath + "/installer/scan/not-detected.nix")
     ];
 
-  boot.initrd.availableKernelModules = [ "nvme" "xhci_pci" "ahci" "thunderbolt" "usb_storage" "usbhid" "sd_mod" ];
-  boot.initrd.kernelModules = [
-    "kvm-amd"
-    # device-mapper
+  boot.initrd.availableKernelModules = [
+    "aesni_intel"
+    "aes_x86_64"
+    "ahci"
+    "cbc"
+    "cryptd"
+    "crypto_simd"
     "dm_crypt"
     "dm_mod"
     "dm_snapshot"
-
-    # crypto transforms needed by encrypted_keys/dm_crypt (cbc(aes), xts(aes))
-    "aesni_intel"
-    "crypto_simd"
-    "gf128mul"
-    "cryptd"
-    "cbc"
-    "xts"
-    "sha256_generic"      # <-- use the real module name, not "sha256"
-
-    # only if you *really* need keyring helpers in initrd:
     "encrypted_keys"
+    "gf128mul"
+    "kvm-amd"
+    "nvme"
+    "sd_mod"
+    "sha256_generic"
+    "thunderbolt"
     "trusted"
+    "usbhid"
+    "usb_storage"
+    "xhci_pci"
+    "xts"
   ];
+
+  boot.initrd.kernelModules = [
+    "aesni_intel"
+    "aes_x86_64"
+    "ahci"
+    "cbc"
+    "cryptd"
+    "crypto_simd"
+    "dm_crypt"
+    "dm_mod"
+    "dm_snapshot"
+    "encrypted_keys"
+    "gf128mul"
+    "kvm-amd"
+    "nvme"
+    "sd_mod"
+    "sha256_generic"
+    "thunderbolt"
+    "trusted"
+    "usbhid"
+    "usb_storage"
+    "xhci_pci"
+    "xts"
+  ];
+
+  boot.initrd.luks.cryptoModules = [
+    "dm-crypt"
+    "aes"
+    "aes_x86_64"
+    "xts"
+    "cbc"
+    "gcm"
+    "ghash"
+    "sha1"
+    "sha1"
+    "sha256"
+    "sha512"
+    "cryptd"
+    "crc32c-intel"
+  ];
+
+  boot.initrd.systemd.enable = true;
+  boot.initrd.systemd.emergencyAccess = true;
 
   boot.kernelModules = [ "kvm-amd" ];
   boot.extraModulePackages = [ ];
