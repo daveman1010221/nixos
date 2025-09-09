@@ -2268,26 +2268,18 @@ do_or_echo chown -R nixos:users /mnt/etc/nixos
 # do_or_echo git config --system --add safe.directory /mnt/etc/nixos
 
 echo -e "\033[1;34m[INFO]\033[0m Moving the hardware configuration to the host-specific path in the repo..."
-do_or_echo mv /mnt/etc/nixos/hardware-configuration.nix /mnt/etc/nixos/hosts/$HOSTNAME/hardware.nix
+do_or_echo mv /mnt/etc/nixos/hardware-configuration.nix /mnt/etc/nixos/hosts/$HOSTNAME/hardware-configuration.nix
 
-HWC_PATH="/mnt/etc/nixos/hosts/$HOSTNAME/hardware.nix"
+HWC_PATH="/mnt/etc/nixos/hosts/$HOSTNAME/hardware-configuration.nix"
 
-# 🔩 Add required kernel modules if not already present
-echo -e "\033[1;34m[INFO]\033[0m Injecting required initrd kernel modules..."
-sed -i '/boot\.initrd\.availableKernelModules = \[/,/];/c\
-  boot.initrd.availableKernelModules = [\
-    "nvme" "xhci_pci" "ahci" "thunderbolt" "usb_storage" "usbhid" "sd_mod"\
-    "trusted" "encrypted_keys" "tpm" "tpm_crb" "tpm_tis" "key_type_trusted" "key_type_encrypted"\
-  ];' "$HWC_PATH"
+# Strip out availableKernelModules block entirely from hardware-configuration.nix
+sed -i '/boot\.initrd\.availableKernelModules = \[/,/];/d' "$HWC_PATH"
 
-# 🧠 Enable firmware, hardware, graphics, and QMK support
-echo -e "\033[1;34m[INFO]\033[0m Enabling firmware and QMK keyboard support..."
-do_or_echo sed -i '/^}/i\
-  hardware.enableAllFirmware = true;\
-  hardware.enableAllHardware = true;\
-  hardware.graphics.enable = true;\
-  hardware.keyboard.qmk.enable = true;\
-' "$HWC_PATH"
+# Remove kernelModules block
+sed -i '/boot\.initrd\.kernelModules = \[/,/];/d' "$HWC_PATH"
+
+# Remove luks.cryptoModules block
+sed -i '/boot\.initrd\.luks\.cryptoModules = \[/,/];/d' "$HWC_PATH"
 
 do_or_echo mv /mnt/etc/nixos/configuration.nix /mnt/etc/nixos/configuration.nix.installer
 
@@ -2391,9 +2383,9 @@ nixos-install \
   --flake /mnt/etc/nixos#${HOSTNAME} \
   --override-input secrets-empty path:${BOOT_MOUNT}/secrets/flakey.json
 
-do_or_echo umount ${SECRETS_MOUNT}
-do_or_echo cryptsetup luksClose secrets_crypt
-do_or_echo umount "${BOOT_MOUNT}/EFI"
-do_or_echo umount "${BOOT_MOUNT}"
+#do_or_echo umount ${SECRETS_MOUNT}
+#do_or_echo cryptsetup luksClose secrets_crypt
+#do_or_echo umount "${BOOT_MOUNT}/EFI"
+#do_or_echo umount "${BOOT_MOUNT}"
 
 echo -e "\033[1;32m[SUCCESS]\033[0m Installation complete! Reboot when ready."

@@ -90,61 +90,10 @@
   boot.kernelModules = [ "kvm-amd" ];
   boot.extraModulePackages = [ ];
 
-  # Enables DHCP on each ethernet and wireless interface. In case of scripted networking
-  # (the default) this is the recommended approach. When using systemd-networkd it's
-  # still possible to use this option, but it's recommended to use it in conjunction
-  # with explicit per-interface declarations with `networking.interfaces.<interface>.useDHCP`.
-  networking.useDHCP = lib.mkDefault true;
-  # networking.interfaces.enp17s0.useDHCP = lib.mkDefault true;
-  # networking.interfaces.wlp16s0.useDHCP = lib.mkDefault true;
-
   nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
   hardware.cpu.amd.updateMicrocode = true;
   hardware.enableAllFirmware = true;
   hardware.enableAllHardware = true;
   hardware.graphics.enable = true;
   hardware.keyboard.qmk.enable = true;
-
-  fileSystems."/" =
-    { device = "/dev/disk/by-uuid/98f0bc96-4d08-4ac3-a779-ac022d1dbf4d";
-      fsType = "f2fs";
-    };
-
-  fileSystems."/tmp" =
-    { device = "/dev/disk/by-uuid/6deb5430-a419-40eb-826d-5ba1bfd29720";
-      fsType = "f2fs";
-    };
-
-  fileSystems."/var" =
-    { device = "/dev/disk/by-uuid/e8a660ae-61f8-46f1-8d68-16d1168e4e11";
-      fsType = "f2fs";
-    };
-
-  fileSystems."/home" =
-    { device = "/dev/disk/by-uuid/8e367057-beb6-4e29-a803-2bb7e932ebe5";
-      fsType = "f2fs";
-    };
-
-  fileSystems."/boot" =
-    { device = "/dev/disk/by-uuid/3d155266-a770-40d2-83cf-2b3ffb03c0ac";
-      fsType = "ext4";
-    };
-
-  fileSystems."/boot/EFI" =
-    { device = "/dev/disk/by-uuid/3F90-C5AF";
-      fsType = "vfat";
-      options = [ "fmask=0022" "dmask=0022" ];
-    };
-
-  fileSystems."/secrets" =
-    { device = "/dev/disk/by-uuid/edf2e240-70a3-442b-bdb1-d77d215c2576";
-      fsType = "ext4";
-    };
-
-  boot.initrd.luks.devices."secrets_crypt".device = "/dev/disk/by-uuid/8efa51df-afa6-4eae-b6c8-05c15272298c";
-
-  swapDevices =
-    [ { device = "/dev/disk/by-uuid/7d42ad61-3082-4788-89eb-f2a26a571d53"; }
-    ];
-
 }
