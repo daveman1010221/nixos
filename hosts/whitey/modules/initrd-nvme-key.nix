@@ -12,6 +12,16 @@ let
 
   mountPoint = "/mnt/secrets-stage1";
 
+  # If secretsDev is NOT a glob, we can synthesize the .device unit name.
+  isGlob = lib.any (p: lib.hasInfix p secretsDev) [ "*" "?" "[" ];
+
+  devPath  = lib.removePrefix "/dev/" secretsDev;
+
+  # Escape '-' first, then '/' → '-' (systemd device unit convention)
+  devEscHy = lib.replaceStrings [ "-" ] [ "\\x2d" ] devPath;
+  devEsc   = lib.replaceStrings [ "/" ] [ "-" ] devEscHy;
+  devUnit  = "dev-" + devEsc + ".device";
+
   # absolute store paths (so the script never relies on $PATH)
   cryptsetup = "${pkgs.cryptsetup}/bin/cryptsetup";
   mount      = "${pkgs.util-linux}/bin/mount";
@@ -46,13 +56,31 @@ in
 
   boot.initrd.systemd.services.nvme-hw-key = {
     description = "Inject NVMe hardware-encryption key (stage-1)";
-    wantedBy    = [ "initrd.target" ];
 
-    # Robust ordering in initrd; don't hard-require a device unit that may not appear
-    after        = [ "systemd-modules-load.service" "systemd-udevd.service" ];
-    before       = [ "sysroot.mount" ];
+    # Run *very* early, and finish before md/LVM/fsck/root try to start.
+    unitConfig.DefaultDependencies = false;
+    before = [
+      "mdadm-grow-continue.service"
+      "mdmon@.service"
+      "lvm2-activation-early.service"
+      "lvm2-activation.service"
+      "systemd-fsck@.service"
+      "systemd-fsck-root.service"
+      "initrd-root-fs.target"
+      "sysroot.mount"
+      "sysroot-usr.mount"
+    ];
 
-    # If the token isn’t present yet, simply skip (no 90s timeout)
+    # Don’t even start until modules are loaded; if we have a concrete device
+    # (no glob), also wait for its .device unit.
+    after    = [ "systemd-modules-load.service" ] ++ lib.optionals (!isGlob) [ devUnit ];
+    requires = [ "systemd-modules-load.service" ] ++ lib.optionals (!isGlob) [ devUnit ];
+
+    # Optional: make md/LVM/filesystem bits *wait for us* explicitly.
+    wantedBy = [ "initrd.target" "lvm2-activation-early.service" "lvm2-activation.service" ];
+
+    # If the token isn’t present yet, simply skip (no 90s timeout).
+    # Works with literal paths and globs.
     unitConfig.ConditionPathExistsGlob = secretsDev;
     
     # keep $PATH convenience (but script uses absolute paths anyway)
@@ -68,7 +96,6 @@ in
       StandardError  = "journal+console";
       UMask = "0077";  # keep any temp copies/dirs locked down
     };
-    unitConfig.DefaultDependencies = false;
     unitConfig.OnFailure = [ "emergency.target" ];
     unitConfig.FailureAction = "emergency";
 
@@ -119,20 +146,23 @@ in
       ${modprobe} -ab xts aesni_intel gf128mul crypto_simd sha256 essiv || true
       ${modprobe} -ab dm_crypt || true
 
+      # Be explicit: don’t proceed until udev finished creating nodes we care about
+      ${pkgs.systemd}/bin/udevadm settle || true
+
       [ -x ${nvme} ] || { echo "[nvme-hw-key] nvme-cli missing in initrd"; fail_banner; exit 1; }
 
       # Resolve the token device from a by-id GLOB. Print safely, expand only when listing.
       SECRETS_GLOB='${secretsDev}'
       for i in $(seq 1 30); do
           NODE="$(ls $SECRETS_GLOB 2>/dev/null | head -n1 || true)"
-          if [ "$${NODE+x}" = x ] && [ -e "$NODE" ]; then
+          if [ -n "$NODE" ] && [ -e "$NODE" ]; then
             break
           fi
           printf '[nvme-hw-key] waiting for %s …\n' "$SECRETS_GLOB"
           ${pkgs.systemd}/bin/udevadm settle || true
           sleep 0.25
       done
-      if [ "$${NODE+x}" != x ] || [ ! -e "$NODE" ]; then
+      if [ -z "$NODE" ] || [ ! -e "$NODE" ]; then
           printf '[nvme-hw-key] Device %s never appeared\n' "$SECRETS_GLOB" >&2
           fail_banner
           exit 1

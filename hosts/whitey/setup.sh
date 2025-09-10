@@ -2349,7 +2349,7 @@ fi
 
 # 🧼 Remove /secrets mount entry to avoid early-stage mount issues
 echo -e "\033[1;34m[INFO]\033[0m Removing /secrets filesystem entry from hardware.nix..."
-sed -i '/fileSystems\."\/secrets"/,/^\s*};/d' "$HWC_PATH"
+sed -i '0,/^[[:space:]]*fileSystems\."\/secrets"[[:space:]]*=/,/^[[:space:]]*};[[:space:]]*$/d' "$HWC_PATH"
 
 echo -e "\033[1;34m[INFO]\033[0m Writing ${BOOT_MOUNT}/secrets/flakey.json ..."
 

@@ -8,9 +8,12 @@ export NIX_CONFIG="experimental-features = nix-command flakes"
 echo "[INFO] Installing essential packages with nix profile"
 nix profile install \
   github:NixOS/nixpkgs#kitty \
+  github:NixOS/nixpkgs#eza \
+  github:NixOS/nixpkgs#wl-clipboard \
   github:NixOS/nixpkgs#fish \
   github:NixOS/nixpkgs#ripgrep \
   github:NixOS/nixpkgs#tree \
+  github:daveman1010221/dotacat-fast \
   github:daveman1010221/nix-neovim || true
 
 echo "[INFO] Writing Fish configuration to ~/.config/fish/config.fish"
