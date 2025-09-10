@@ -2349,7 +2349,12 @@ fi
 
 # 🧼 Remove /secrets mount entry to avoid early-stage mount issues
 echo -e "\033[1;34m[INFO]\033[0m Removing /secrets filesystem entry from hardware.nix..."
-sed -i '0,/^[[:space:]]*fileSystems\."\/secrets"[[:space:]]*=/,/^[[:space:]]*};[[:space:]]*$/d' "$HWC_PATH"
+
+# delete the luks.devices line
+sed -i '/^[[:space:]]*boot\.initrd\.luks\.devices\."secrets_crypt"\.device[[:space:]]*=/d' "$HWC_PATH"
+
+# delete the /secrets filesystem block
+sed -i '/^[[:space:]]*fileSystems\."\/secrets"[[:space:]]*=/,/^[[:space:]]*};[[:space:]]*$/d' "$HWC_PATH"
 
 echo -e "\033[1;34m[INFO]\033[0m Writing ${BOOT_MOUNT}/secrets/flakey.json ..."
 
