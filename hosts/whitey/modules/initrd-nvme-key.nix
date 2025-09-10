@@ -3,19 +3,14 @@
 let
   s = secrets;
 
+  # Prefer a stable by-id GLOB here, e.g. "/dev/disk/by-id/usb-Keypad200_*"
+  # UUIDs change when you reformat and may not exist in initrd yet.
   secretsDev = s.PLACEHOLDER_SECRETS;     # LUKS partition (by-uuid or by-id)
+
   nvme0      = s.PLACEHOLDER_NVME0;       # first NVMe namespace/drive
   nvme1      = s.PLACEHOLDER_NVME1;       # second NVMe namespace/drive
 
   mountPoint = "/mnt/secrets-stage1";
-
-  # systemd device unit for the block path (so our unit waits for the node)
-  # e.g. /dev/disk/by-uuid/XXXX -> dev-disk-by\x2duuid-XXXX.device
-  devPath  = lib.removePrefix "/dev/" secretsDev;
-  # First escape original hyphens, THEN turn '/' into '-' so only original '-' get escaped.
-  devEscHy = lib.replaceStrings [ "-" ] [ "\\x2d" ] devPath;
-  devEsc   = lib.replaceStrings [ "/" ] [ "-" ] devEscHy;
-  devUnit  = "dev-" + devEsc + ".device";
 
   # absolute store paths (so the script never relies on $PATH)
   cryptsetup = "${pkgs.cryptsetup}/bin/cryptsetup";
@@ -52,17 +47,21 @@ in
   boot.initrd.systemd.services.nvme-hw-key = {
     description = "Inject NVMe hardware-encryption key (stage-1)";
     wantedBy    = [ "initrd.target" ];
-    # Don’t start until modules are loaded AND the block device exists
-    after       = [ "systemd-modules-load.service" devUnit ];
-    requires       = [ "systemd-modules-load.service" devUnit ];
-    before      = [ "sysroot.mount" ];
+
+    # Robust ordering in initrd; don't hard-require a device unit that may not appear
+    after        = [ "systemd-modules-load.service" "systemd-udevd.service" ];
+    before       = [ "sysroot.mount" ];
+
+    # If the token isn’t present yet, simply skip (no 90s timeout)
+    unitConfig.ConditionPathExistsGlob = secretsDev;
     
     # keep $PATH convenience (but script uses absolute paths anyway)
     path = with pkgs; [ bash coreutils util-linux cryptsetup nvme-cli gawk expect kmod systemd findutils];
 
     serviceConfig = {
       Type = "oneshot";
-      TimeoutStartSec = "infinity";
+      TimeoutStartSec = "60";
+
       # Make sure it’s truly early-boot and not pulling in defaults
       # that might reorder us behind mounts/fsck.
       StandardOutput = "journal+console";
@@ -122,25 +121,29 @@ in
 
       [ -x ${nvme} ] || { echo "[nvme-hw-key] nvme-cli missing in initrd"; fail_banner; exit 1; }
 
-      # wait up to ~7.5 s for the LUKS device symlink to appear
-      for i in {1..15}; do
-          if [ -e "${secretsDev}" ]; then break; fi
-          echo "[nvme-hw-key] waiting for ${secretsDev} …"
+      # Resolve the token device from a by-id GLOB. Print safely, expand only when listing.
+      SECRETS_GLOB='${secretsDev}'
+      for i in $(seq 1 30); do
+          NODE="$(ls $SECRETS_GLOB 2>/dev/null | head -n1 || true)"
+          if [ "$${NODE+x}" = x ] && [ -e "$NODE" ]; then
+            break
+          fi
+          printf '[nvme-hw-key] waiting for %s …\n' "$SECRETS_GLOB"
           ${pkgs.systemd}/bin/udevadm settle || true
-          sleep 0.5
+          sleep 0.25
       done
-      if [ ! -e "${secretsDev}" ]; then
-          echo "[nvme-hw-key] Device ${secretsDev} never appeared" >&2
+      if [ "$${NODE+x}" != x ] || [ ! -e "$NODE" ]; then
+          printf '[nvme-hw-key] Device %s never appeared\n' "$SECRETS_GLOB" >&2
           fail_banner
           exit 1
       fi
 
-      echo "[nvme-hw-key] luksOpen ${secretsDev}"
+      echo "[nvme-hw-key] luksOpen $NODE"
       pass=$(${pkgs.systemd}/bin/systemd-ask-password --no-tty \
           "Passphrase for secrets_crypt" 2>&1)
       [ -n "$pass" ] || { echo "[nvme-hw-key] Empty passphrase"; fail_banner; exit 1; }
       echo -n "$pass" | ${cryptsetup} luksOpen --key-file=- \
-          ${secretsDev} secrets_crypt
+          "$NODE" secrets_crypt
 
       echo "[nvme-hw-key] Mounting secrets_crypt read-only"
       mkdir -p /tmp/boot
