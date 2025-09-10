@@ -2246,6 +2246,9 @@ fi
 
 echo -e "\033[1;34m[INFO]\033[0m All devices, filesystems, and mounts are correctly set up."
 
+do_or_echo umount ${SECRETS_MOUNT}
+do_or_echo cryptsetup luksClose secrets_crypt
+
 ### CLONING NIXOS CONFIG FROM GIT ###
 echo -e "\033[1;34m[INFO]\033[0m Generating initial hardware configuration..."
 do_or_echo nixos-generate-config --root /mnt  # <-- Creates initial /mnt/etc/* files
@@ -2305,7 +2308,16 @@ fi
 boot_uuid="$boot_fs_uuid"
 
 # UUID of the *unencrypted* mapper device
-secrets_fs_uuid=$(blkid -s UUID -o value /dev/mapper/secrets_crypt)
+#secrets_fs_uuid=$(blkid -s UUID -o value /dev/mapper/secrets_crypt)
+
+# --- compute stable device symlinks ----------------------------------------
+# LUKS container (encrypted) device path for /secrets
+secrets_path="$(
+  for f in /dev/disk/by-id/*; do
+    [[ -e "$f" ]] || continue
+    [[ "$(readlink -f "$f")" == "$SECRETS_PARTITION" ]] && { echo "$f"; break; }
+  done
+)"
 
 # Get persistent device paths
 nvme0_path="$(
@@ -2339,7 +2351,7 @@ MISSING_VALUES=0
 check_value "$boot_uuid" "Boot UUID"
 check_value "$boot_fs_uuid" "Boot Filesystem UUID"
 check_value "$efi_fs_uuid" "EFI Filesystem UUID"
-check_value "$secrets_fs_uuid"  "Secrets Filesystem UUID"
+#check_value "$secrets_fs_uuid"  "Secrets Filesystem UUID"
 
 if [[ $MISSING_VALUES -gt 0 ]]; then
     echo -e "\033[1;31m[ERROR]\033[0m Some expected values were not found in hardware-configuration.nix!"
@@ -2348,13 +2360,13 @@ if [[ $MISSING_VALUES -gt 0 ]]; then
 fi
 
 # 🧼 Remove /secrets mount entry to avoid early-stage mount issues
-echo -e "\033[1;34m[INFO]\033[0m Removing /secrets filesystem entry from hardware.nix..."
+#echo -e "\033[1;34m[INFO]\033[0m Removing /secrets filesystem entry from hardware.nix..."
 
 # delete the luks.devices line
-sed -i '/^[[:space:]]*boot\.initrd\.luks\.devices\."secrets_crypt"\.device[[:space:]]*=/d' "$HWC_PATH"
+#sed -i '/^[[:space:]]*boot\.initrd\.luks\.devices\."secrets_crypt"\.device[[:space:]]*=/d' "$HWC_PATH"
 
 # delete the /secrets filesystem block
-sed -i '/^[[:space:]]*fileSystems\."\/secrets"[[:space:]]*=/,/^[[:space:]]*};[[:space:]]*$/d' "$HWC_PATH"
+#sed -i '/^[[:space:]]*fileSystems\."\/secrets"[[:space:]]*=/,/^[[:space:]]*};[[:space:]]*$/d' "$HWC_PATH"
 
 echo -e "\033[1;34m[INFO]\033[0m Writing ${BOOT_MOUNT}/secrets/flakey.json ..."
 
@@ -2373,12 +2385,12 @@ do_or_echo tee "${BOOT_MOUNT}/secrets/flakey.json" >/dev/null <<EOF
   "PLACEHOLDER_VAR":   "/dev/disk/by-uuid/${var_fs_uuid}",
   "PLACEHOLDER_TMP":   "/dev/disk/by-uuid/${tmp_fs_uuid}",
   "PLACEHOLDER_HOME":  "/dev/disk/by-uuid/${home_fs_uuid}",
-  "PLACEHOLDER_SECRETS": "/dev/disk/by-uuid/${secrets_fs_uuid}",
+  "PLACEHOLDER_SECRETS": "${secrets_path}",
 
   "GIT_SMTP_PASS": "mlucmulyvpqlfprb"
 }
 EOF
-
+# "PLACEHOLDER_SECRETS": "/dev/disk/by-uuid/${secrets_fs_uuid}",
 do_or_echo chmod 600 "${BOOT_MOUNT}/secrets/flakey.json"
 
 ### APPLYING SYSTEM CONFIGURATION ###
