@@ -201,7 +201,6 @@ in {
         python314Full
         qmk
         rootlesskit
-        rustdesk
         ripgrep
         ripgrep-all
         seahorse
