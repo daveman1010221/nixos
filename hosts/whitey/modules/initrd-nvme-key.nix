@@ -149,7 +149,8 @@ in
       # Be explicit: don’t proceed until udev finished creating nodes we care about
       ${pkgs.systemd}/bin/udevadm settle || true
 
-      [ -x ${nvme} ] || { echo "[nvme-hw-key] nvme-cli missing in initrd"; fail_banner; exit 1; }
+      nvme_bin="${nvme}"   # binary path provided by Nix
+      [ -x "$nvme_bin" ] || { echo "[nvme-hw-key] nvme-cli missing in initrd"; fail_banner; exit 1; }
 
       # Resolve the token device from a by-* glob at *runtime* (no build-time expansion).
       SECRETS_GLOB='${secretsDev}'
@@ -205,12 +206,23 @@ in
 
       # Helper: read controller serial from a namespace node
       get_serial() {
-        local dev="''$1" out sn
-        out="$(${nvme} id-ctrl "''$dev" 2>/dev/null)" || return 1
-        sn="$(printf '%s\n' "''$out" \
-             | ${awk} -F':' '/^sn[[:space:]]*:/ { sub(/^[ \t]+/,"","''$2"); sub(/[ \t]+$/,"","''$2"); print ''$2; exit }')"
-        [ -n "''$sn" ] || return 1
-        printf '%s\n' "''$sn"
+        local dev="$1" ctrl out sn
+        [[ -n "$dev" ]] || return 2
+
+        [[ "$dev" == /dev/* ]] || dev="/dev/$dev"
+        local real; real="$(readlink -f -- "$dev" 2>/dev/null || echo "$dev")"
+
+        local base; base="$(basename -- "$real")"
+        if [[ "$base" =~ ^(nvme[0-9]+)n[0-9]+(p[0-9]+)?$ ]]; then
+          ctrl="/dev/''${BASH_REMATCH[1]}"
+        else
+          ctrl="$real"
+        fi
+
+        out="$("$nvme_bin" id-ctrl "$ctrl" 2>/dev/null)" || return 1
+        sn="$(printf '%s\n' "$out" | awk -F: '/^[[:space:]]*sn[[:space:]]*:/{gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2; exit}')"
+        [[ -n "$sn" ]] || return 1
+        printf '%s\n' "$sn"
       }
       
       # Iterate both placeholders (namespaces)
@@ -245,7 +257,7 @@ in
         ${chmodBin} 0400 "$keyfile" || true
       
         # Optional: show pre-state (ignore failures)
-        ${nvme} sed discover "$dev" || true
+        "$nvme_bin" sed discover "$dev" || true
       
         # Drive nvme sed unlock with expect
         ${pkgs.expect}/bin/expect -c '
@@ -270,7 +282,7 @@ in
         fi
       
         # Verify Locked: No
-        out="$(${nvme} sed discover "$dev" 2>/dev/null || true)"
+        out="$("$nvme_bin" sed discover "$dev" 2>/dev/null || true)"
         locked="$(echo "$out" | ${awk} -F: "/^[[:space:]]*Locked/{gsub(/^[ \\t]+|[ \\t]+$/,\"\",\$2); print \$2}")"
         if [ "$locked" != "No" ]; then
           echo "[nvme-hw-key] ERROR: $dev still locked after unlock" >&2
@@ -282,8 +294,8 @@ in
       done
 
       # Optional: log current state (post-unlock)
-      ${nvme} sed discover ${nvme0} || true
-      ${nvme} sed discover ${nvme1} || true
+      "$nvme_bin" sed discover ${nvme0} || true
+      "$nvme_bin" sed discover ${nvme1} || true
       unset pass PW || true
 
       # Let udev/LVM notice the now-unlocked namespaces before root discovery
@@ -291,7 +303,7 @@ in
 
       # Quick verification that both are unlocked
       for dev in ${nvme0} ${nvme1}; do
-        out="$(${nvme} sed discover "$dev" 2>/dev/null || true)"
+        out="$("$nvme_bin" sed discover "$dev" 2>/dev/null || true)"
         locked="$(echo "$out" | ${awk} -F: "/^[[:space:]]*Locked/{gsub(/^[ \\t]+|[ \\t]+$/,\"\",\$2); print \$2}")"
         if [ "$locked" != "No" ]; then
           echo "[nvme-hw-key] ERROR: $dev still locked" >&2
