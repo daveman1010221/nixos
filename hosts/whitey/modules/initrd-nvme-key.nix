@@ -151,21 +151,23 @@ in
 
       [ -x ${nvme} ] || { echo "[nvme-hw-key] nvme-cli missing in initrd"; fail_banner; exit 1; }
 
-      # Resolve the token device from a by-id GLOB. Print safely, expand only when listing.
+      # Resolve the token device from a by-* glob at *runtime* (no build-time expansion).
       SECRETS_GLOB='${secretsDev}'
+      NODE=""
       for i in $(seq 1 30); do
-          NODE="$(ls $SECRETS_GLOB 2>/dev/null | head -n1 || true)"
-          if [ -n "$NODE" ] && [ -e "$NODE" ]; then
-            break
-          fi
-          printf '[nvme-hw-key] waiting for %s …\n' "$SECRETS_GLOB"
-          ${pkgs.systemd}/bin/udevadm settle || true
-          sleep 0.25
+        # Use absolute ls and `--` to avoid oddities if the glob starts with '-'
+        NODE="$(${pkgs.coreutils}/bin/ls -1 -- $SECRETS_GLOB 2>/dev/null | head -n1 || true)"
+        if [ -n "$NODE" ] && [ -e "$NODE" ]; then
+          break
+        fi
+        printf '[nvme-hw-key] waiting for "%s" …\n' "$SECRETS_GLOB"
+        ${pkgs.systemd}/bin/udevadm settle || true
+        sleep 0.25
       done
       if [ -z "$NODE" ] || [ ! -e "$NODE" ]; then
-          printf '[nvme-hw-key] Device %s never appeared\n' "$SECRETS_GLOB" >&2
-          fail_banner
-          exit 1
+        printf '[nvme-hw-key] Device "%s" never appeared\n' "$SECRETS_GLOB" >&2
+        fail_banner
+        exit 1
       fi
 
       echo "[nvme-hw-key] luksOpen $NODE"
@@ -285,6 +287,9 @@ in
       ${nvme} sed discover ${nvme0} || true
       ${nvme} sed discover ${nvme1} || true
       unset pass PW || true
+
+      # Let udev/LVM notice the now-unlocked namespaces before root discovery
+      ${pkgs.systemd}/bin/udevadm settle || true
 
       # Quick verification that both are unlocked
       for dev in ${nvme0} ${nvme1}; do
