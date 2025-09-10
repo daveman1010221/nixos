@@ -204,15 +204,13 @@ in
       echo "[nvme-hw-key] Injecting keys per-controller (SED Opal unlock)"
 
       # Helper: read controller serial from a namespace node
-      get_serial_from_ns() {
-        # $1 is a device path like /dev/nvme0n1
-        local ns devbase ctrl sys serial
-        ns="$1"
-        devbase="''${ns##*/}"
-        ctrl="''${devbase%n*}"                        # nvme0
-        sys="/sys/class/nvme/''${ctrl}/serial"
-        [ -r "$sys" ] || { echo "???"; return 1; }
-        tr -d '\n' < "$sys"
+      get_serial() {
+        local dev="''$1" out sn
+        out="$(${nvme} id-ctrl "''$dev" 2>/dev/null)" || return 1
+        sn="$(printf '%s\n' "''$out" \
+             | ${awk} -F':' '/^sn[[:space:]]*:/ { sub(/^[ \t]+/,"","''$2"); sub(/[ \t]+$/,"","''$2"); print ''$2; exit }')"
+        [ -n "''$sn" ] || return 1
+        printf '%s\n' "''$sn"
       }
       
       # Iterate both placeholders (namespaces)
@@ -223,7 +221,7 @@ in
           exit 1
         fi
       
-        serial="$(get_serial_from_ns "$dev")" || serial=""
+        serial="$(get_serial "$dev")" || serial=""
         if [ -z "$serial" ] || [ "$serial" = "???" ]; then
           echo "[nvme-hw-key] ERROR: could not read controller serial for $dev" >&2
           fail_banner

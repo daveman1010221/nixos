@@ -17,6 +17,7 @@
     "sha256"
     "sha256_generic"
     "vmd"
+    "cbc"
 
     # crypto
     "aesni_intel"     # The gold standard for FIPS 140-2/3 compliance
@@ -75,9 +76,15 @@
   # Define LUKS devices, including the encrypted /boot and NVMe devices
   boot.initrd.luks.cryptoModules = [
     "aesni_intel"
+    "cbc"
+    "cryptd"
+    "crypto_null"
+    "crypto_simd"
     "essiv"
-    "xts"
+    "gf128mul"
     "sha256"
+    "sha256_generic"
+    "xts"
   ];
 
   boot.initrd.kernelModules = [
