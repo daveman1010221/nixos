@@ -266,33 +266,30 @@ in
         ${chmodBin} 0400 "$keyfile" || true
       
       # Optional: show pre-state (ignore failures)
-      "''${nvme}" sed discover "$dev" || true
+      "${nvme}" sed discover "$dev" || true
 
       # Expect script via stdin; pass PW, DEV, and NVME absolute path as args.
-      # NOTE: the heredoc is single-quoted so neither Bash nor Nix expands $… inside.
-      nvme_bin="''${nvme}"
-      ${pkgs.expect}/bin/expect -f - -- "$PW" "$dev" "$nvme_bin" <<'EOF_EXP'
+      # NOTE: the heredoc is single-quoted so Bash/Nix won't expand inside.
+      ${pkgs.expect}/bin/expect -f - -- "$PW" "$dev" "$nvme" <<'EOF_EXP'
 set timeout 30
-# argv: 0=password, 1=device, 2=absolute nvme path
 set pw   [lindex $argv 0]
 set dev  [lindex $argv 1]
 set nvme [lindex $argv 2]
-spawn -- $nvme sed unlock $dev --ask-key
+spawn $nvme sed unlock $dev --ask-key
 expect {
     -re {(?i)pass(word)?|key.*:} { send -- "$pw\r"; exp_continue }
-    eof {
-        catch wait result
-        exit [lindex $result 3]
-    }
+    eof {}
     timeout { exit 124 }
 }
+catch wait result
+exit [lindex $result 3]
 EOF_EXP
 
         rc=$?
-        if [ \$rc -ne 0 ]; then
-          echo "[nvme-hw-key] ERROR: unlock failed for $dev (rc=\$rc)" >&2
+        if [ $rc -ne 0 ]; then
+          echo "[nvme-hw-key] ERROR: unlock failed for $dev (rc=$rc)" >&2
           fail_banner
-          exit \$rc
+          exit $rc
         fi
       
         # Verify Locked: No
@@ -308,8 +305,8 @@ EOF_EXP
       done
 
       # Optional: log current state (post-unlock)
-      "$nvme_bin" sed discover ${nvme0} || true
-      "$nvme_bin" sed discover ${nvme1} || true
+      "${nvme}" sed discover ${nvme0} || true
+      "${nvme}" sed discover ${nvme1} || true
       unset pass PW || true
 
       # Let udev/LVM notice the now-unlocked namespaces before root discovery
@@ -318,6 +315,7 @@ EOF_EXP
       # Quick verification that both are unlocked
       for dev in ${nvme0} ${nvme1}; do
         out="$("$nvme_bin" sed discover "$dev" 2>/dev/null || true)"
+        out="$("${nvme}" sed discover "$dev" 2>/dev/null || true)"
         locked="$(echo "$out" | ${awk} -F: "/^[[:space:]]*Locked/{gsub(/^[ \\t]+|[ \\t]+$/,\"\",\$2); print \$2}")"
         if [ "$locked" != "No" ]; then
           echo "[nvme-hw-key] ERROR: $dev still locked" >&2
