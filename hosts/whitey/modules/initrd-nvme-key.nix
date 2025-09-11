@@ -99,10 +99,11 @@ in
       Type = "oneshot";
       TimeoutStartSec = "60";
 
-      # Make sure it’s truly early-boot and not pulling in defaults
-      # that might reorder us behind mounts/fsck.
-      StandardOutput = "journal+console";
-      StandardError  = "journal+console";
+      # Early-boot hygiene and make sure nvme-cli can get a TTY
+      StandardInput  = "null";
+      StandardOutput = "journal";
+      StandardError  = "journal";
+      PrivateDevices = false;
       UMask = "0077";  # keep any temp copies/dirs locked down
     };
     unitConfig.OnFailure = [ "emergency.target" ];
@@ -296,8 +297,9 @@ set timeout 30
 set pw   [lindex $argv 0]
 set dev  [lindex $argv 1]
 set nvme [lindex $argv 2]
-# Give nvme a controlling TTY
-spawn -noecho ${pkgs.util-linux}/bin/script -eqc "$nvme sed unlock $dev --ask-key" /dev/null
+
+# allocate real tty for nvme-cli
+spawn -noecho -nottycopy -nottyinit -- setsid -w ${pkgs.util-linux}/bin/script -qfc "$nvme sed unlock $dev --ask-key" /dev/null
 expect {
     -re {(?i)Password:} {
         send -- "$pw\r"
