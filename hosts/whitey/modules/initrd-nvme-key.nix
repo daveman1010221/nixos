@@ -49,6 +49,7 @@ in
     coreutils         # cp / chmod / stat / shred / sync
     gawk              # for robust parsing of 'nvme sed discover'
     expect            # to feed nvme sed --ask-key non-interactively
+    tcl               # runtime requirement for "expect"
     systemd           # udevadm + systemd-ask-password in stage-1
     kmod              # modprobe in stage-1
     findutils
@@ -84,7 +85,15 @@ in
     unitConfig.ConditionPathExistsGlob = secretsDev;
     
     # keep $PATH convenience (but script uses absolute paths anyway)
-    path = with pkgs; [ bash coreutils util-linux cryptsetup nvme-cli gawk expect kmod systemd findutils];
+    path = with pkgs; [ bash coreutils util-linux cryptsetup nvme-cli gawk expect tcl kmod systemd findutils];
+
+    # Expect needs Tcl runtime path in stage-1 (version-aware)
+    environment = let
+      tclMajMin = lib.versions.majorMinor pkgs.tcl.version;
+      tclLibDir = "${lib.getLib pkgs.tcl}/lib/tcl${tclMajMin}";
+    in {
+      TCL_LIBRARY = tclLibDir;
+    };
 
     serviceConfig = {
       Type = "oneshot";
