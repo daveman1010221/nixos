@@ -268,6 +268,27 @@ in
       # Show pre-state (ignore failures)
       "$nvme_bin" sed discover "$dev" || true
 
+# [nixos@nixos:~/nixos/hosts/whitey]$ sudo nvme sed discover /dev/nvme0n1
+# Locking Features:
+#   Locking Supported:         Yes
+#   Locking Feature Enabled:   Yes
+#   Locked:                    No
+
+# [nixos@nixos:~/nixos/hosts/whitey]$ sudo nvme sed discover /dev/nvme1n1
+# Locking Features:
+#   Locking Supported:         Yes
+#   Locking Feature Enabled:   Yes
+#   Locked:                    Yes
+
+      # Check lock state first
+      out="$("$nvme_bin" sed discover "$dev" 2>/dev/null || true)"
+      locked="$(echo "$out" | ${awk} -F: '/^[[:space:]]*Locked/{gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}')"
+
+      if [ "$locked" = "No" ]; then
+        echo "[nvme-hw-key] $dev already unlocked, skipping"
+        continue
+      fi
+
       # Expect script via stdin; pass PW, DEV, and NVME absolute path as args.
       # NOTE: the heredoc is single-quoted so Bash/Nix won't expand inside.
       ${pkgs.expect}/bin/expect -f - -- "$PW" "$dev" "$nvme_bin" <<'EOF_EXP'
@@ -275,14 +296,18 @@ set timeout 30
 set pw   [lindex $argv 0]
 set dev  [lindex $argv 1]
 set nvme [lindex $argv 2]
-spawn $nvme sed unlock $dev --ask-key
+spawn -- $nvme sed unlock $dev --ask-key
 expect {
-    -re {(?i)pass(word)?|key.*:} { send -- "$pw\r"; exp_continue }
-    eof {}
+    -re {(?i)pass(word)?|key.*:} {
+        send -- "$pw\r"
+        exp_continue
+    }
+    eof {
+        catch wait result
+        exit [lindex $result 3]
+    }
     timeout { exit 124 }
 }
-catch wait result
-exit [lindex $result 3]
 EOF_EXP
 
         rc=$?
