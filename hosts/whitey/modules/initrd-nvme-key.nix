@@ -265,12 +265,12 @@ in
         fi
         ${chmodBin} 0400 "$keyfile" || true
       
-      # Optional: show pre-state (ignore failures)
-      "${nvme}" sed discover "$dev" || true
+      # Show pre-state (ignore failures)
+      "$nvme_bin" sed discover "$dev" || true
 
       # Expect script via stdin; pass PW, DEV, and NVME absolute path as args.
       # NOTE: the heredoc is single-quoted so Bash/Nix won't expand inside.
-      ${pkgs.expect}/bin/expect -f - -- "$PW" "$dev" "$nvme" <<'EOF_EXP'
+      ${pkgs.expect}/bin/expect -f - -- "$PW" "$dev" "$nvme_bin" <<'EOF_EXP'
 set timeout 30
 set pw   [lindex $argv 0]
 set dev  [lindex $argv 1]
@@ -305,8 +305,8 @@ EOF_EXP
       done
 
       # Optional: log current state (post-unlock)
-      "${nvme}" sed discover ${nvme0} || true
-      "${nvme}" sed discover ${nvme1} || true
+      "$nvme_bin" sed discover ${nvme0} || true
+      "$nvme_bin" sed discover ${nvme1} || true
       unset pass PW || true
 
       # Let udev/LVM notice the now-unlocked namespaces before root discovery
@@ -315,7 +315,6 @@ EOF_EXP
       # Quick verification that both are unlocked
       for dev in ${nvme0} ${nvme1}; do
         out="$("$nvme_bin" sed discover "$dev" 2>/dev/null || true)"
-        out="$("${nvme}" sed discover "$dev" 2>/dev/null || true)"
         locked="$(echo "$out" | ${awk} -F: "/^[[:space:]]*Locked/{gsub(/^[ \\t]+|[ \\t]+$/,\"\",\$2); print \$2}")"
         if [ "$locked" != "No" ]; then
           echo "[nvme-hw-key] ERROR: $dev still locked" >&2
