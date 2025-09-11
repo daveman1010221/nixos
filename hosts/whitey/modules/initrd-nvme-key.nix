@@ -296,9 +296,10 @@ set timeout 30
 set pw   [lindex $argv 0]
 set dev  [lindex $argv 1]
 set nvme [lindex $argv 2]
-spawn -- $nvme sed unlock $dev --ask-key
+# Give nvme a controlling TTY
+spawn -noecho ${pkgs.util-linux}/bin/script -eqc "$nvme sed unlock $dev --ask-key" /dev/null
 expect {
-    -re {(?i)pass(word)?|key.*:} {
+    -re {(?i)Password:} {
         send -- "$pw\r"
         exp_continue
     }
