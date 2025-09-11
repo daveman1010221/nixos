@@ -265,29 +265,34 @@ in
         fi
         ${chmodBin} 0400 "$keyfile" || true
       
-        # Optional: show pre-state (ignore failures)
-        "$nvme_bin" sed discover "$dev" || true
-      
-        # Drive nvme sed unlock with expect
-        ${pkgs.expect}/bin/expect -c '
-          set timeout 30
-          set pw  [lindex $argv 0]
-          set dev [lindex $argv 1]
-          spawn '"${nvme}"' sed unlock $dev --ask-key
-          expect {
-            -re {(?i)pass(word)?|key.*:} { send -- "$pw\r"; exp_continue }
-            eof {}
-            timeout { exit 124 }
-          }
-          catch wait result
-          exit [lindex $result 3]
-        ' "$PW" "$dev"
-      
+      # Optional: show pre-state (ignore failures)
+      "''${nvme}" sed discover "$dev" || true
+
+      # Expect script via stdin; pass PW, DEV, and NVME absolute path as args.
+      # NOTE: the heredoc is single-quoted so neither Bash nor Nix expands $… inside.
+      nvme_bin="''${nvme}"
+      ${pkgs.expect}/bin/expect -f - -- "$PW" "$dev" "$nvme_bin" <<'EOF_EXP'
+set timeout 30
+# argv: 0=password, 1=device, 2=absolute nvme path
+set pw   [lindex $argv 0]
+set dev  [lindex $argv 1]
+set nvme [lindex $argv 2]
+spawn -- $nvme sed unlock $dev --ask-key
+expect {
+    -re {(?i)pass(word)?|key.*:} { send -- "$pw\r"; exp_continue }
+    eof {
+        catch wait result
+        exit [lindex $result 3]
+    }
+    timeout { exit 124 }
+}
+EOF_EXP
+
         rc=$?
-        if [ $rc -ne 0 ]; then
-          echo "[nvme-hw-key] ERROR: unlock failed for $dev (rc=$rc)" >&2
+        if [ \$rc -ne 0 ]; then
+          echo "[nvme-hw-key] ERROR: unlock failed for $dev (rc=\$rc)" >&2
           fail_banner
-          exit $rc
+          exit \$rc
         fi
       
         # Verify Locked: No
