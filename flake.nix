@@ -179,7 +179,7 @@
             hostPkgs    = pkgsForHost;   # if something still expects plain ‘pkgs’
         };
         modules = commonModules ++ [
-          (hostDir + /hardware-configuration.nix)        # or hardware-configuration.nix
+          #(hostDir + /hardware-configuration.nix)        # or hardware-configuration.nix
           (hostDir + /hardware.nix)        # or hardware-configuration.nix
 
           ({ config, lib, pkgs, ... }: let
