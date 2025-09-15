@@ -28,6 +28,7 @@ let
   umount     = "${pkgs.util-linux}/bin/umount";
   nvme       = "${pkgs.nvme-cli}/bin/nvme";
   statBin    = "${pkgs.coreutils}/bin/stat";
+  sedKeyBin  = "${pkgs.sed-key}/bin/sed-key";
   shred      = "${pkgs.coreutils}/bin/shred";
   awk        = "${pkgs.gawk}/bin/awk";
   cp         = "${pkgs.coreutils}/bin/cp";
@@ -48,8 +49,7 @@ in
     util-linux        # provides mount/umount (tiny, so cheap to include)
     coreutils         # cp / chmod / stat / shred / sync
     gawk              # for robust parsing of 'nvme sed discover'
-    expect            # to feed nvme sed --ask-key non-interactively
-    tcl               # runtime requirement for "expect"
+    sed-key           # replaces expect + nvme sed unlock (didn't work because of the tty issue)
     systemd           # udevadm + systemd-ask-password in stage-1
     kmod              # modprobe in stage-1
     findutils
@@ -266,8 +266,8 @@ in
         fi
         ${chmodBin} 0400 "$keyfile" || true
       
-      # Show pre-state (ignore failures)
-      "$nvme_bin" sed discover "$dev" || true
+        # Show pre-state (ignore failures)
+        "$nvme_bin" sed discover "$dev" || true
 
 # [nixos@nixos:~/nixos/hosts/whitey]$ sudo nvme sed discover /dev/nvme0n1
 # Locking Features:
@@ -281,45 +281,23 @@ in
 #   Locking Feature Enabled:   Yes
 #   Locked:                    Yes
 
-      # Check lock state first
-      out="$("$nvme_bin" sed discover "$dev" 2>/dev/null || true)"
-      locked="$(echo "$out" | ${awk} -F: '/^[[:space:]]*Locked/{gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}')"
+        # Check lock state first
+        out="$("$nvme_bin" sed discover "$dev" 2>/dev/null || true)"
+        locked="$(echo "$out" | ${awk} -F: '/^[[:space:]]*Locked/{gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}')"
 
-      if [ "$locked" = "No" ]; then
-        echo "[nvme-hw-key] $dev already unlocked, skipping"
-        continue
-      fi
+        if [ "$locked" = "No" ]; then
+          echo "[nvme-hw-key] $dev already unlocked, skipping"
+          continue
+        fi
 
-      # Expect script via stdin; pass PW, DEV, and NVME absolute path as args.
-      # NOTE: the heredoc is single-quoted so Bash/Nix won't expand inside.
-      ${pkgs.expect}/bin/expect -f - -- "$PW" "$dev" "$nvme_bin" <<'EOF_EXP'
-set timeout 30
-set pw   [lindex $argv 0]
-set dev  [lindex $argv 1]
-set nvme [lindex $argv 2]
-
-# allocate real tty for nvme-cli
-spawn -noecho -nottycopy -nottyinit -- setsid -w ${pkgs.util-linux}/bin/script -qfc "$nvme sed unlock $dev --ask-key" /dev/null
-expect {
-    -re {(?i)Password:} {
-        send -- "$pw\r"
-        exp_continue
-    }
-    eof {
-        catch wait result
-        exit [lindex $result 3]
-    }
-    timeout { exit 124 }
-}
-EOF_EXP
-
-        rc=$?
-        if [ $rc -ne 0 ]; then
+        # Use sed-key directly; password piped on stdin
+        if ! echo -n "$PW" | ${sedKeyBin} unlock "$dev" -; then
+          rc=$?
           echo "[nvme-hw-key] ERROR: unlock failed for $dev (rc=$rc)" >&2
           fail_banner
           exit $rc
         fi
-      
+
         # Verify Locked: No
         out="$("$nvme_bin" sed discover "$dev" 2>/dev/null || true)"
         locked="$(echo "$out" | ${awk} -F: "/^[[:space:]]*Locked/{gsub(/^[ \\t]+|[ \\t]+$/,\"\",\$2); print \$2}")"
@@ -328,7 +306,6 @@ EOF_EXP
           fail_banner
           exit 1
         fi
-      
         echo "[nvme-hw-key] OK: $dev unlocked"
       done
 
