@@ -67,20 +67,8 @@ in
     # (no glob), also wait for its .device unit.
     after    = [ "systemd-modules-load.service" ] ++ lib.optionals (!isGlob) [ devUnit ];
 
-    # If the token isn’t present yet, simply skip (no 90s timeout).
-    # Works with literal paths and globs.
-    unitConfig.ConditionPathExistsGlob = secretsDev;
-    
     # keep $PATH convenience (but script uses absolute paths anyway)
-    path = with pkgs; [ bash coreutils util-linux cryptsetup nvme-cli gawk expect tcl kmod systemd findutils];
-
-    # Expect needs Tcl runtime path in stage-1 (version-aware)
-    environment = let
-      tclMajMin = lib.versions.majorMinor pkgs.tcl.version;
-      tclLibDir = "${lib.getLib pkgs.tcl}/lib/tcl${tclMajMin}";
-    in {
-      TCL_LIBRARY = tclLibDir;
-    };
+    path = with pkgs; [ bash coreutils util-linux cryptsetup nvme-cli gawk kmod systemd findutils sed-key];
 
     serviceConfig = {
       Type = "oneshot";
