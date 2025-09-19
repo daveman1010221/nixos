@@ -120,7 +120,8 @@ in {
         fd
         file
         findutils
-        firefox
+        #firefox
+        librewolf
         firmware-updater
         fish
         fishPlugins.bass.src
@@ -198,7 +199,7 @@ in {
         psmisc
         pwgen
         pyenv
-        python314Full
+        #python314Full
         qmk
         rootlesskit
         ripgrep
@@ -233,11 +234,11 @@ in {
         vkmark
         vulkan-tools
         vulnix
-        wasm-pack
-        wasmtime
+        #wasm-pack
+        #wasmtime
         wordbook
-        wasmer
-        wasmer-pack
+        #wasmer
+        #wasmer-pack
         wayland-utils
         wget
         wine64                                      # support 64-bit only
