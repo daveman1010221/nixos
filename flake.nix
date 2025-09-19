@@ -22,6 +22,7 @@
       url   = "path:./secrets-empty.json";   # ← lives in repo
       flake = false;
     };
+    sed-key.url = "github:daveman1010221/sed-key";
   };
 
   # The audit package needs an overlay to get the permissions right for
@@ -50,7 +51,7 @@
   #   });
   # })
 
-  outputs = { self, nixpkgs, rust-overlay, myNeovimOverlay, dotacatFast, secrets-empty }:
+  outputs = { self, nixpkgs, rust-overlay, myNeovimOverlay, dotacatFast, secrets-empty, sed-key }:
   let
     lib = nixpkgs.lib;
     system = "x86_64-linux";
@@ -100,6 +101,11 @@
       rust-overlay.overlays.default
       myNeovimOverlay.overlays.default
       (import ./flakes/overlays/git-hooks.nix)
+
+      (final: prev: {
+        sed-key = sed-key.packages.${prev.system}.default;
+      })
+
     ];
 
     # helper function: overlayed nixpkgs for any host
@@ -179,7 +185,7 @@
             hostPkgs    = pkgsForHost;   # if something still expects plain ‘pkgs’
         };
         modules = commonModules ++ [
-          #(hostDir + /hardware-configuration.nix)        # or hardware-configuration.nix
+          (hostDir + /hardware-configuration.nix)        # or hardware-configuration.nix
           (hostDir + /hardware.nix)        # or hardware-configuration.nix
 
           ({ config, lib, pkgs, ... }: let

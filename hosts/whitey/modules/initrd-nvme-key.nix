@@ -60,25 +60,12 @@ in
 
     # Run *very* early, and finish before md/LVM/fsck/root try to start.
     unitConfig.DefaultDependencies = false;
-    before = [
-      "mdadm-grow-continue.service"
-      "mdmon@.service"
-      "lvm2-activation-early.service"
-      "lvm2-activation.service"
-      "systemd-fsck@.service"
-      "systemd-fsck-root.service"
-      "initrd-root-fs.target"
-      "sysroot.mount"
-      "sysroot-usr.mount"
-    ];
+    wantedBy = [ "initrd.target" ];
+    before = [ "initrd-root-fs.target" ];
 
     # Don’t even start until modules are loaded; if we have a concrete device
     # (no glob), also wait for its .device unit.
     after    = [ "systemd-modules-load.service" ] ++ lib.optionals (!isGlob) [ devUnit ];
-    requires = [ "systemd-modules-load.service" ] ++ lib.optionals (!isGlob) [ devUnit ];
-
-    # Optional: make md/LVM/filesystem bits *wait for us* explicitly.
-    wantedBy = [ "initrd.target" "lvm2-activation-early.service" "lvm2-activation.service" ];
 
     # If the token isn’t present yet, simply skip (no 90s timeout).
     # Works with literal paths and globs.
