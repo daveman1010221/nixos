@@ -53,6 +53,8 @@ in
     systemd           # udevadm + systemd-ask-password in stage-1
     kmod              # modprobe in stage-1
     findutils
+    mdadm
+    lvm2
   ];
 
   boot.initrd.systemd.services.nvme-hw-key = {
@@ -315,6 +317,11 @@ in
       ${findBin} ${mountPoint}/keys -type f -name 'nvme-*.key' -exec ${shred} -u {} +
       ${umount} ${mountPoint} || true
       rmdir ${mountPoint} 2>/dev/null || true
+
+      # Now assemble RAID and activate LVM
+      ${pkgs.mdadm}/bin/mdadm --assemble --scan || true
+      ${pkgs.lvm2}/bin/lvm vgchange -ay || true
+      ${pkgs.systemd}/bin/udevadm settle || true
     '';
   };
 }
