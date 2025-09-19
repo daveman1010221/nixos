@@ -36,6 +36,8 @@ let
   modprobe   = "${pkgs.kmod}/bin/modprobe";
   syncBin    = "${pkgs.coreutils}/bin/sync";
   findBin    = "${pkgs.findutils}/bin/find";
+  lvmBin     = "${pkgs.lvm2}/bin/lvm";
+  mdadmBin   = "${pkgs.mdadm}/bin/mdadm";
 in
 {
   boot.initrd.systemd.enable = true;
@@ -70,7 +72,7 @@ in
     after    = [ "systemd-modules-load.service" ] ++ lib.optionals (!isGlob) [ devUnit ];
 
     # keep $PATH convenience (but script uses absolute paths anyway)
-    path = with pkgs; [ bash coreutils util-linux cryptsetup nvme-cli gawk kmod systemd findutils sed-key];
+    path = with pkgs; [ bash coreutils util-linux cryptsetup nvme-cli gawk kmod systemd findutils sed-key mdadm lvm2];
 
     serviceConfig = {
       Type = "oneshot";
@@ -83,8 +85,8 @@ in
       PrivateDevices = false;
       UMask = "0077";  # keep any temp copies/dirs locked down
     };
+    unitConfig.FailureAction = "exit";
     unitConfig.OnFailure = [ "emergency.target" ];
-    unitConfig.FailureAction = "emergency";
 
     script = ''
       #!${pkgs.bash}/bin/bash
@@ -319,8 +321,9 @@ in
       rmdir ${mountPoint} 2>/dev/null || true
 
       # Now assemble RAID and activate LVM
-      ${pkgs.mdadm}/bin/mdadm --assemble --scan || true
-      ${pkgs.lvm2}/bin/lvm vgchange -ay || true
+      ${mdadmBin} --assemble --scan || true
+      ${lvmBin} vgchange -ay || true
+
       ${pkgs.systemd}/bin/udevadm settle || true
     '';
   };
