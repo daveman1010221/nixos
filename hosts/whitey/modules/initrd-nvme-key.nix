@@ -85,7 +85,7 @@ in
       PrivateDevices = false;
       UMask = "0077";  # keep any temp copies/dirs locked down
     };
-    unitConfig.FailureAction = "exit";
+    unitConfig.FailureAction = "none";
     unitConfig.OnFailure = [ "emergency.target" ];
 
     script = ''
@@ -214,6 +214,22 @@ in
         printf '%s\n' "$sn"
       }
       
+      # Return "no", "yes", or "unknown" for Locked: … (case/spacing tolerant)
+      locked_state() {
+        local dev="$1" out state
+        out="$("$nvme_bin" sed discover "$dev" 2>/dev/null || true)"
+        # Extract the value to the right of "Locked:" (any spacing), trim, lower-case
+        state="$(printf '%s\n' "$out" \
+          | ${awk} -F: '/^[[:space:]]*Locked[[:space:]]*/{
+                v=$2; gsub(/^[ \t]+|[ \t]+$/, "", v);
+                print tolower(v); exit
+            }')"
+        case "$state" in
+          yes|no) printf '%s\n' "$state" ;;
+          *)      printf '%s\n' "unknown"; echo "$out" >&2 ;;
+        esac
+      }
+
       # Iterate both placeholders (namespaces)
       for dev in ${nvme0} ${nvme1}; do
         if [ ! -e "$dev" ]; then
@@ -260,13 +276,14 @@ in
 #   Locking Feature Enabled:   Yes
 #   Locked:                    Yes
 
-        # Check lock state first
-        out="$("$nvme_bin" sed discover "$dev" 2>/dev/null || true)"
-        locked="$(echo "$out" | ${awk} -F: '/^[[:space:]]*Locked/{gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}')"
-
-        if [ "$locked" = "No" ]; then
+        # Check lock state first (robust)
+        locked="$(locked_state "$dev")"
+        if [ "$locked" = "no" ]; then
           echo "[nvme-hw-key] $dev already unlocked, skipping"
           continue
+        fi
+        if [ "$locked" = "unknown" ]; then
+          echo "[nvme-hw-key] WARN: could not parse lock state for $dev; attempting unlock anyway"
         fi
 
         # Use sed-key directly; password piped on stdin
@@ -277,10 +294,10 @@ in
           exit $rc
         fi
 
-        # Verify Locked: No
-        out="$("$nvme_bin" sed discover "$dev" 2>/dev/null || true)"
-        locked="$(echo "$out" | ${awk} -F: "/^[[:space:]]*Locked/{gsub(/^[ \\t]+|[ \\t]+$/,\"\",\$2); print \$2}")"
-        if [ "$locked" != "No" ]; then
+        # Verify Locked: No (robust)
+        locked="$(locked_state "$dev")"
+        if [ "$locked" != "no" ]; then
+          echo "[nvme-hw-key] DEBUG: post-unlock Locked='$locked' for $dev" >&2
           echo "[nvme-hw-key] ERROR: $dev still locked after unlock" >&2
           fail_banner
           exit 1
@@ -298,9 +315,9 @@ in
 
       # Quick verification that both are unlocked
       for dev in ${nvme0} ${nvme1}; do
-        out="$("$nvme_bin" sed discover "$dev" 2>/dev/null || true)"
-        locked="$(echo "$out" | ${awk} -F: "/^[[:space:]]*Locked/{gsub(/^[ \\t]+|[ \\t]+$/,\"\",\$2); print \$2}")"
-        if [ "$locked" != "No" ]; then
+        locked="$(locked_state "$dev")"
+        if [ "$locked" != "no" ]; then
+          echo "[nvme-hw-key] DEBUG: final Locked='$locked' for $dev" >&2
           echo "[nvme-hw-key] ERROR: $dev still locked" >&2
           fail_banner
           exit 1
