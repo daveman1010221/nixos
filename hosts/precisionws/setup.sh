@@ -442,18 +442,18 @@ do_or_echo mkdir -p "${BOOT_MOUNT}/secrets"
 
 do_or_echo tee "${BOOT_MOUNT}/secrets/flakey.json" >/dev/null <<EOF
 {
-  PLACEHOLDER_NVME0 = "${nvme0_path}";
-  PLACEHOLDER_NVME1 = "${nvme1_path}";
+  "PLACEHOLDER_NVME0": "${nvme0_path}",
+  "PLACEHOLDER_NVME1": "${nvme1_path}",
 
-  PLACEHOLDER_BOOT_UUID = "/dev/disk/by-uuid/${boot_uuid}";
-  PLACEHOLDER_BOOT_FS_UUID = "/dev/disk/by-uuid/${boot_fs_uuid}";
-  PLACEHOLDER_EFI_FS_UUID = "/dev/disk/by-uuid/${efi_fs_uuid}";
+  "PLACEHOLDER_BOOT_UUID": "/dev/disk/by-uuid/${boot_uuid}",
+  "PLACEHOLDER_BOOT_FS_UUID": "/dev/disk/by-uuid/${boot_fs_uuid}",
+  "PLACEHOLDER_EFI_FS_UUID": "/dev/disk/by-uuid/${efi_fs_uuid}",
 
-  PLACEHOLDER_ROOT = "/dev/disk/by-uuid/${root_fs_uuid}";
-  PLACEHOLDER_VAR = "/dev/disk/by-uuid/${var_fs_uuid}";
-  PLACEHOLDER_TMP = "/dev/disk/by-uuid/${tmp_fs_uuid}";
-  PLACEHOLDER_HOME = "/dev/disk/by-uuid/${home_fs_uuid}";
-  PLACEHOLDER_HOSTNAME = "${HOSTNAME}";
+  "PLACEHOLDER_ROOT": "/dev/disk/by-uuid/${root_fs_uuid}",
+  "PLACEHOLDER_VAR": "/dev/disk/by-uuid/${var_fs_uuid}",
+  "PLACEHOLDER_TMP": "/dev/disk/by-uuid/${tmp_fs_uuid}",
+  "PLACEHOLDER_HOME": "/dev/disk/by-uuid/${home_fs_uuid}",
+  "PLACEHOLDER_HOSTNAME": "${HOSTNAME}",
 
   "GIT_SMTP_PASS": "mlucmulyvpqlfprb"
 }
