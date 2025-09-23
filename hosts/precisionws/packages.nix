@@ -227,11 +227,11 @@ in {
         vkmark
         vulkan-tools
         vulnix
-        wasm-bindgen-cli_0_2_100
-        wasmer
-        wasmer-pack
-        wasm-pack
-        wasmtime
+        #wasm-bindgen-cli_0_2_100
+        #wasmer
+        #wasmer-pack
+        #wasm-pack
+        #wasmtime
         wayland-utils
         webkitgtk_4_1
         wget
