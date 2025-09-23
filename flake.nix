@@ -157,7 +157,7 @@
               [ ];   # no overlays for this host
           in
             # import every *.nix in overlays/
-            map import overlayFiles
+            map (path: { lib, ... }: import path { inherit lib; }) overlayFiles
             # plus custom kernel overlay if it exists
             ++ lib.optional (builtins.pathExists (hostDir + "/overlays/custom-kernel.nix"))
                  (import (hostDir + "/overlays/custom-kernel.nix") {
