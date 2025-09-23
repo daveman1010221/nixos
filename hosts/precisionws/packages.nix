@@ -200,7 +200,6 @@ in {
         podman-desktop
         psmisc
         pwgen
-        python314Full
         qmk
         ripgrep
         ripgrep-all

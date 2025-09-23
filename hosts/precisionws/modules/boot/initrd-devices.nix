@@ -15,7 +15,7 @@
       luks.devices = {
         boot_crypt = {
           # sdb2 UUID (pre-luksOpen)
-          device = config.my.boot.device;
+          device = "/dev/disk/by-uuid/bd7cb388-7b08-4264-bee0-7477fd48fa59";
           preLVM = true;
           allowDiscards = true;
           # Custom mount commands for the unencrypted /boot, included in the initrd
