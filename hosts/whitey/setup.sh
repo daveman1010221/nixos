@@ -2268,8 +2268,6 @@ do_or_echo cp -r /home/nixos/nixos /mnt/etc
 
 do_or_echo chown -R nixos:users /mnt/etc/nixos
 
-# do_or_echo git config --system --add safe.directory /mnt/etc/nixos
-
 echo -e "\033[1;34m[INFO]\033[0m Moving the hardware configuration to the host-specific path in the repo..."
 do_or_echo mv /mnt/etc/nixos/hardware-configuration.nix /mnt/etc/nixos/hosts/$HOSTNAME/hardware-configuration.nix
 
@@ -2306,9 +2304,6 @@ fi
 
 # (Optional) if you still want a separate “boot_uuid”, make it the same source:
 boot_uuid="$boot_fs_uuid"
-
-# UUID of the *unencrypted* mapper device
-#secrets_fs_uuid=$(blkid -s UUID -o value /dev/mapper/secrets_crypt)
 
 # --- compute stable device symlinks ----------------------------------------
 # LUKS container (encrypted) device path for /secrets
@@ -2359,15 +2354,6 @@ if [[ $MISSING_VALUES -gt 0 ]]; then
     exit 1
 fi
 
-# 🧼 Remove /secrets mount entry to avoid early-stage mount issues
-#echo -e "\033[1;34m[INFO]\033[0m Removing /secrets filesystem entry from hardware.nix..."
-
-# delete the luks.devices line
-#sed -i '/^[[:space:]]*boot\.initrd\.luks\.devices\."secrets_crypt"\.device[[:space:]]*=/d' "$HWC_PATH"
-
-# delete the /secrets filesystem block
-#sed -i '/^[[:space:]]*fileSystems\."\/secrets"[[:space:]]*=/,/^[[:space:]]*};[[:space:]]*$/d' "$HWC_PATH"
-
 echo -e "\033[1;34m[INFO]\033[0m Writing ${BOOT_MOUNT}/secrets/flakey.json ..."
 
 # ensure the directory exists on the *boot* filesystem
@@ -2390,7 +2376,7 @@ do_or_echo tee "${BOOT_MOUNT}/secrets/flakey.json" >/dev/null <<EOF
   "GIT_SMTP_PASS": "mlucmulyvpqlfprb"
 }
 EOF
-# "PLACEHOLDER_SECRETS": "/dev/disk/by-uuid/${secrets_fs_uuid}",
+
 do_or_echo chmod 600 "${BOOT_MOUNT}/secrets/flakey.json"
 
 ### APPLYING SYSTEM CONFIGURATION ###

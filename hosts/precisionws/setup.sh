@@ -31,6 +31,15 @@ function check_value() {
     fi
 }
 
+# If DRY_RUN=1, just print the command. Otherwise execute it.
+do_or_echo() {
+  if [[ "${DRY_RUN:-0}" == "1" ]]; then
+    echo "[DRY] $*"
+    return 0
+  fi
+  "$@"
+}
+
 modprobe essiv
 
 ### IDENTIFY TARGET DRIVE ###
@@ -345,9 +354,6 @@ echo -e "\033[1;34m[INFO]\033[0m All devices, filesystems, and mounts are correc
 echo -e "\033[1;34m[INFO]\033[0m Generating initial hardware configuration..."
 nixos-generate-config --root /mnt  # <-- Creates initial /mnt/etc/* files
 
-echo -e "\033[1;34m[INFO]\033[0m Backing up hardware configuration..."
-mv /mnt/etc/nixos/hardware-configuration.nix /mnt/etc/hardware-configuration.nix.bak
-
 ### ASK USER FOR HOSTNAME ###
 echo -e "\033[1;34m[INFO]\033[0m Please enter the hostname for this system:"
 read -p "Hostname: " HOSTNAME
@@ -358,12 +364,26 @@ if [[ ! "$HOSTNAME" =~ ^[a-zA-Z0-9._-]+$ ]]; then
     exit 1
 fi
 
-echo -e "\033[1;34m[INFO]\033[0m Cloning NixOS flake configuration..."
-rm -rf /mnt/etc/nixos  # Remove any existing repo (to avoid conflicts)
-git clone ${NIXOS_REPO} /mnt/etc/nixos
+echo -e "\033[1;34m[INFO]\033[0m Copying NixOS flake repo to its official destination..."
+do_or_echo cp -r /home/nixos/nixos /mnt/etc
 
-echo -e "\033[1;34m[INFO]\033[0m Restoring hardware configuration..."
-mv /mnt/etc/hardware-configuration.nix.bak /mnt/etc/nixos/hardware-configuration.nix
+do_or_echo chown -R nixos:users /mnt/etc/nixos
+
+echo -e "\033[1;34m[INFO]\033[0m Moving the hardware configuration to the host-specific path in the repo..."
+do_or_echo mv /mnt/etc/nixos/hardware-configuration.nix /mnt/etc/nixos/hosts/$HOSTNAME/hardware-configuration.nix
+
+HWC_PATH="/mnt/etc/nixos/hosts/$HOSTNAME/hardware-configuration.nix"
+
+# Strip out availableKernelModules block entirely from hardware-configuration.nix
+sed -i '/boot\.initrd\.availableKernelModules = \[/,/];/d' "$HWC_PATH"
+
+# Remove kernelModules block
+sed -i '/boot\.initrd\.kernelModules = \[/,/];/d' "$HWC_PATH"
+
+# Remove luks.cryptoModules block
+sed -i '/boot\.initrd\.luks\.cryptoModules = \[/,/];/d' "$HWC_PATH"
+
+do_or_echo mv /mnt/etc/nixos/configuration.nix /mnt/etc/nixos/configuration.nix.installer
 
 echo -e "\033[1;34m[INFO]\033[0m Extracting hardware-specific details for flake configuration..."
 
@@ -377,17 +397,31 @@ tmp_fs_uuid=$(findmnt -no UUID /mnt/tmp)
 home_fs_uuid=$(findmnt -no UUID /mnt/home)
 
 # Get persistent device paths
-nvme0_path=$(ls -l /dev/disk/by-id/ | awk '/nvme-eui.*nvme0n1/ {print "/dev/disk/by-id/" $9}' | head -n1)
-nvme1_path=$(ls -l /dev/disk/by-id/ | awk '/nvme-eui.*nvme1n1/ {print "/dev/disk/by-id/" $9}' | head -n1)
+nvme0_path="$(
+  for f in /dev/disk/by-id/nvme-*; do
+    [[ -e "$f" ]] || continue
+    [[ "$(readlink -f "$f")" == /dev/nvme0n1 ]] && { echo "$f"; break; }
+  done
+)"
+nvme1_path="$(
+  for f in /dev/disk/by-id/nvme-*; do
+    [[ -e "$f" ]] || continue
+    [[ "$(readlink -f "$f")" == /dev/nvme1n1 ]] && { echo "$f"; break; }
+  done
+)"
 
 if [[ -z "$nvme0_path" || -z "$nvme1_path" ]]; then
+    # Fall back to raw nodes if by-id symlinks aren’t present
+    : "${nvme0_path:=/dev/nvme0n1}"
+    : "${nvme1_path:=/dev/nvme1n1}"
+fi
+if [[ ! -e "$nvme0_path" || ! -e "$nvme1_path" ]]; then
     echo -e "\033[1;31m[ERROR]\033[0m Failed to determine NVMe device paths!"
     echo "Check your system's device list manually and update flake.nix as needed."
     exit 1
 fi
 
 # Validate extracted values against hardware-configuration.nix
-HWC_PATH="/mnt/etc/nixos/hardware-configuration.nix"
 echo -e "\033[1;34m[INFO]\033[0m Verifying extracted values exist in hardware-configuration.nix..."
 
 MISSING_VALUES=0
@@ -401,36 +435,43 @@ if [[ $MISSING_VALUES -gt 0 ]]; then
     exit 1
 fi
 
-echo -e "\033[1;34m[INFO]\033[0m Updating flake.nix with detected hardware details..."
+echo -e "\033[1;34m[INFO]\033[0m Writing ${BOOT_MOUNT}/secrets/flakey.json ..."
 
-# Ensure the secrets.nix file is created and write the variables to it
-cat <<EOF > /mnt/etc/nixos/secrets.nix
+# ensure the directory exists on the *boot* filesystem
+do_or_echo mkdir -p "${BOOT_MOUNT}/secrets"
+
+do_or_echo tee "${BOOT_MOUNT}/secrets/flakey.json" >/dev/null <<EOF
 {
   PLACEHOLDER_NVME0 = "${nvme0_path}";
   PLACEHOLDER_NVME1 = "${nvme1_path}";
+
   PLACEHOLDER_BOOT_UUID = "/dev/disk/by-uuid/${boot_uuid}";
   PLACEHOLDER_BOOT_FS_UUID = "/dev/disk/by-uuid/${boot_fs_uuid}";
   PLACEHOLDER_EFI_FS_UUID = "/dev/disk/by-uuid/${efi_fs_uuid}";
+
   PLACEHOLDER_ROOT = "/dev/disk/by-uuid/${root_fs_uuid}";
   PLACEHOLDER_VAR = "/dev/disk/by-uuid/${var_fs_uuid}";
   PLACEHOLDER_TMP = "/dev/disk/by-uuid/${tmp_fs_uuid}";
   PLACEHOLDER_HOME = "/dev/disk/by-uuid/${home_fs_uuid}";
   PLACEHOLDER_HOSTNAME = "${HOSTNAME}";
+
+  "GIT_SMTP_PASS": "mlucmulyvpqlfprb"
 }
 EOF
 
-# Ensure the secrets.nix file is saved
-chmod 600 /mnt/etc/nixos/secrets.nix
+do_or_echo chmod 600 "${BOOT_MOUNT}/secrets/flakey.json"
 
-echo -e "\033[1;34m[INFO]\033[0m Flake configuration updated successfully!"
 
 ### APPLYING SYSTEM CONFIGURATION ###
-if [[ -z "$HOSTNAME" ]]; then
-    echo -e "\033[1;31m[ERROR]\033[0m No hostname provided. Aborting installation."
-    exit 1
-fi
 
 echo -e "\033[1;34m[INFO]\033[0m Installing NixOS from flake..."
-nixos-install --flake /mnt/etc/nixos#$HOSTNAME
+nixos-install \
+  --flake /mnt/etc/nixos#${HOSTNAME} \
+  --override-input secrets-empty path:${BOOT_MOUNT}/secrets/flakey.json
+
+#do_or_echo umount ${SECRETS_MOUNT}
+#do_or_echo cryptsetup luksClose secrets_crypt
+#do_or_echo umount "${BOOT_MOUNT}/EFI"
+#do_or_echo umount "${BOOT_MOUNT}"
 
 echo -e "\033[1;32m[SUCCESS]\033[0m Installation complete! Reboot when ready."
