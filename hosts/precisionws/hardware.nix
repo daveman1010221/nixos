@@ -55,7 +55,7 @@
   
       # Optionally, you may need to select the appropriate driver version for
       # your specific GPU.
-      package = pkgsForHost.hardened_linux_kernel.nvidiaPackages.beta;
+      #package = pkgsForHost.linux_kernel.nvidiaPackages.beta;
     };
   
     nvidia-container-toolkit = {

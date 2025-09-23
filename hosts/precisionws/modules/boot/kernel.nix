@@ -6,7 +6,7 @@
     # This bug-checks when GDM tries to initialize the external Nvidia display,
     # so clearly some sort of issue with the Nvidia driver and the hardened
     # kernel. It works fine for 'on the go' config, though. Considering making two kernel configs.
-    kernelPackages = pkgsForHost.hardened_linux_kernel;
+    #kernelPackages = pkgsForHost.hardened_linux_kernel;
 
   initrd.availableKernelModules = lib.mkForce [
     "nls_cp437"
