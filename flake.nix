@@ -222,12 +222,11 @@
             manpackage = pkgs.man;
             fisheyGrc = pkgs.fishPlugins.grc;
             bass = pkgs.fishPlugins.bass;
-            bobthefish = pkgs.fishPlugins.bobthefish;
             starshipBin = "${pkgs.starship}/bin/starship";
             atuinBin = "${pkgs.atuin}/bin/atuin";
             editor = myNeovimOverlay;
             fishShell = pkgs.fish;
-            browser = "${pkgs.firefox}/bin/firefox";
+            browser = "${pkgs.librewolf}/bin/librewolf";
           in {
             nixpkgs = {
               hostPlatform = lib.mkDefault "x86_64-linux";
@@ -264,7 +263,6 @@
                       inherit
                         fisheyGrc
                         bass
-                        bobthefish
                         starshipBin
                         atuinBin
                         editor
@@ -301,7 +299,13 @@
             networking = {
               hostName = hostName;
               firewall.enable = false;
-              networkmanager.enable = true;
+              networkmanager = {
+                enable = true;
+                plugins = [
+                  pkgs.networkmanager-openvpn
+                ];
+
+              };
 
               nftables = {
                 checkRuleset = true;
@@ -384,6 +388,10 @@
                   bind c new-window -c "#{pane_current_path}"
                 '';
               };
+              java.enable = true;
+
+              seahorse.enable = true;
+
               xwayland.enable = true;
             };
             powerManagement = {
@@ -429,9 +437,19 @@
               };
 
               # Configure PAM audit settings for specific services if necessary
-              pam.services.login = {
-                # ttyAudit.enable = true;
-                setLoginUid = true;
+              pam.services = {
+                cosmic = {
+                  enable = true;
+                  text = ''
+                    auth   optional pam_gnome_keyring.so
+                    session optional pam_gnome_keyring.so auto_start
+                  '';
+                };
+
+                login = {
+                  # ttyAudit.enable = true;
+                  setLoginUid = true;
+                };
               };
             };
 
@@ -523,6 +541,8 @@
               # firmware update daemon
               fwupd.enable = true;
 
+              gnome.gnome-keyring.enable = true;
+
               printing = {
                 allowFrom = [ "localhost" ];
                 browsing = false;
@@ -547,6 +567,8 @@
 
               # Enable the OpenSSH daemon.
               openssh.enable = true;
+
+              udev.packages = [ pkgs.android-udev-rules ];
             };
 
             systemd.user.services.xdg-desktop-portal-cosmic = {
