@@ -9,11 +9,26 @@ table ip mytable {
         elements = { 80, 88, 443, 500, 1194, 1224, 4500, 4569, 5060, 7770, 8443, 51820 }
     }
 
+    # --- New sets for ADB/Android debugging ---
+    set adb_ports {
+        type inet_service
+        elements = { 5037 }  # ADB server on host
+    }
+
+    set adb_device_ips {
+        type ipv4_addr
+        elements = { 192.168.1.16 }  # Replace with your phone’s IP
+    }
+
     chain input {
         type filter hook input priority filter; policy drop;
         ct state established,related accept
         iif "lo" accept
         tcp dport @inbound_whitelist ct state new accept
+
+        # Allow ADB server and device over Wi-Fi
+        ip saddr @adb_device_ips tcp dport @adb_ports accept comment "ADB device → host"
+        ip saddr @adb_device_ips tcp sport 40000-65535 accept comment "ADB high ports from device"
 
         # Allow access to Kubernetes API server (default port 6443)
         tcp dport 6443 accept
@@ -43,6 +58,11 @@ table ip mytable {
         tcp dport { 7770, 8443 } accept
         tcp dport 8080 accept # Allow outbound traffic on port 8080
         tcp dport 4173 accept # Allow outbound traffic on port 4173
+
+        # Allow ADB server and device over Wi-Fi
+        ip daddr @adb_device_ips tcp sport @adb_ports accept comment "Host → ADB device"
+        ip daddr @adb_device_ips tcp dport 40000-65535 accept comment "Host → ADB device high ports"
+
         # Allow DNS resolution
 
         # Allow outgoing connections to remote registries and webhooks
