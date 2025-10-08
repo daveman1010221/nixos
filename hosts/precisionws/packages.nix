@@ -28,6 +28,8 @@ in {
           ];
         })
         (hiPrio xwayland)
+        android-tools
+        android-udev-rules
         atkmm
         at-spi2-atk
         atuin
@@ -84,7 +86,7 @@ in {
         cri-o
         cryptsetup
         cups
-        # deja-dup
+        deja-dup
         delta
         dhall
         dhall-bash
@@ -107,17 +109,17 @@ in {
         efibootmgr
         efitools
         efivar
+        ente-desktop
         esbuild
         expressvpn
         eza
         fd
+        ffmpeg_8-full
         file
         findutils
-        firefox
         firmware-updater
         fish
         fishPlugins.bass.src
-        fishPlugins.bobthefish.src
         fishPlugins.foreign-env.src
         fishPlugins.grc.src
         fortune
@@ -148,6 +150,7 @@ in {
         hunspellDicts.en-us
         hyperfine
         intel-gpu-tools
+        jdk
         jq
         jqp
         kernel-hardening-checker
@@ -160,6 +163,7 @@ in {
         kubernetes-helm
         libcanberra-gtk3
         libreoffice-fresh
+        librewolf
         librsvg
         libsoup_3
         lld_20
@@ -167,8 +171,10 @@ in {
         lshw
         lsof
         lvm2
+        maven
         mdadm
         mdcat
+        microsoft-edge
         neofetch
         nerdctl
         nerd-fonts.fira-code
@@ -198,13 +204,13 @@ in {
         podman
         podman-compose
         podman-desktop
+        protonvpn-gui
         psmisc
         pwgen
-        qmk
+        # qmk
         ripgrep
         ripgrep-all
         rootlesskit
-        rustdesk
         seahorse
         signal-desktop
         simple-scan
@@ -234,11 +240,13 @@ in {
         #wasmtime
         wayland-utils
         webkitgtk_4_1
+        weston
         wget
         wine64
         winetricks
         wineWowPackages.staging
         wineWowPackages.waylandFull
+        wireguard-tools
         wl-clipboard-rs
         wordbook
         xbindkeys

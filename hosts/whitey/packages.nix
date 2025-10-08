@@ -125,7 +125,6 @@ in {
         firmware-updater
         fish
         fishPlugins.bass.src
-        fishPlugins.bobthefish.src
         fishPlugins.foreign-env.src
         fishPlugins.grc.src
         fortune
