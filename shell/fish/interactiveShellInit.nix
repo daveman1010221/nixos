@@ -1,7 +1,6 @@
 {
   fisheyGrc,
   bass,
-  bobthefish,
   starshipBin,
   atuinBin,
   editor,
@@ -28,18 +27,10 @@ if status is-interactive; and not set -q __fish_nixos_interactive_config_sourced
     # Bass
     source ${bass}/share/fish/vendor_functions.d/bass.fish
 
-    # Bobthefish (must load BEFORE you override colors/theme)
-    source ${bobthefish}/share/fish/vendor_functions.d/__bobthefish_glyphs.fish
-    source ${bobthefish}/share/fish/vendor_functions.d/fish_mode_prompt.fish
-    source ${bobthefish}/share/fish/vendor_functions.d/fish_right_prompt.fish
-    source ${bobthefish}/share/fish/vendor_functions.d/__bobthefish_colors.fish
-    source ${bobthefish}/share/fish/vendor_functions.d/fish_title.fish
-    source ${bobthefish}/share/fish/vendor_functions.d/__bobthefish_display_colors.fish
-    source ${bobthefish}/share/fish/vendor_functions.d/fish_prompt.fish
-    source ${bobthefish}/share/fish/vendor_functions.d/bobthefish_display_colors.fish
-
-    # Atuin
-    ${atuinBin} init fish | source
+    # Atuin (patched for fish 4.1 to silence shell warnings)
+    ${atuinBin} init fish \
+      | sed 's/bind -M insert -k up/bind -M insert up/' \
+      | source
 
     # Starship
     source (${starshipBin} init fish --print-full-init | psub)
@@ -78,19 +69,9 @@ if status is-interactive; and not set -q __fish_nixos_interactive_config_sourced
     set -g fish_pager_color_completion $foreground
     set -g fish_pager_color_description $comment
 
-    # Theme configuration (bobthefish)
-
     # You'll want to install some nerd fonts, patched for powerline support of the theme.
     # Recommend: 'UbuntuMono Nerd Font 13'
     set -gx theme_nerd_fonts yes
-
-    # bobthefish is the theme of choice. This setting chooses a default color scheme.
-    set -gx theme_color_scheme gruvbox
-
-    set -gx theme_display_vi yes
-    set -gx theme_display_sudo_user yes
-    set -gx theme_show_exit_status yes
-    set -gx theme_display_jobs_verbose yes
 
     # Vi key bindings
     set -gx fish_key_bindings fish_vi_key_bindings
