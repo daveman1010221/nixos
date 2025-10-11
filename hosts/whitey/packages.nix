@@ -17,8 +17,11 @@ in {
 
         (rust-bin.nightly.latest.default.override {
           targets = [ "wasm32-unknown-unknown" ];
-          extensions = [ "rust-src" "rust-analyzer" ];
+          extensions = [ "rust-src" "rust-analyzer" "miri" ];
         })
+
+        android-tools
+        android-udev-rules
 
         # Tauri dev
         cargo-generate
@@ -88,7 +91,7 @@ in {
         xdg-desktop-portal-cosmic
         cryptsetup
         cups
-        #deja-dup
+        deja-dup
         delta
         dhall
         dhall-nix
@@ -115,9 +118,11 @@ in {
         efibootmgr
         efitools
         efivar
+        ente-desktop
         #epsonscan2
         eza
         fd
+        ffmpeg_8-full
         file
         findutils
         #firefox
@@ -132,6 +137,8 @@ in {
         fzf
         gitFull
         # git-up    <-- Broken
+        git-cliff
+        git-filter-repo
         glmark2
         furmark
         glxinfo
@@ -146,6 +153,7 @@ in {
         hunspellDicts.en-us
         hyperfine
         intel-gpu-tools
+        jdk
         jq
         jqp
         kernel-hardening-checker
@@ -159,15 +167,18 @@ in {
         cri-o
         libcanberra-gtk3
         libreoffice-fresh
-        llvmPackages_19.clangUseLLVM
-        clang_19
+        lld_20
+        llvmPackages_20.clangUseLLVM
+        clang_20
         dotacatFast.packages.${system}.default
         lshw
         lsof
         lvm2 # Provides LVM tools: pvcreate, vgcreate, lvcreate
         mdadm # RAID management
         mdcat
-        #microsoft-edge
+        microsoft-edge
+        mullvad-vpn
+        mullvad-closest
         plocate
         cowsay
         neofetch
@@ -178,7 +189,6 @@ in {
         networkmanager-openvpn
         networkmanager-vpnc
         nftables
-        #iptables
         nix-index
         nix-prefetch-git
         nixd
@@ -186,6 +196,8 @@ in {
         nvme-cli
         nvtopPackages.intel
         openssl
+        openssl.dev
+        ollama-cuda
         pandoc
         patool
         parted
@@ -198,13 +210,11 @@ in {
         psmisc
         pwgen
         pyenv
-        #python314Full
-        qmk
+        #qmk
         rootlesskit
         ripgrep
         ripgrep-all
         seahorse
-        #servo
         signal-desktop
         simple-scan
         slirp4netns
@@ -221,6 +231,8 @@ in {
         tree
         tree-sitter
         usbutils
+        unzip
+        uv
         (vscode-with-extensions.override {
           vscodeExtensions = with vscode-extensions; [
             bbenoist.nix
@@ -235,6 +247,7 @@ in {
         vulnix
         #wasm-pack
         #wasmtime
+        #wasm-bindgen-cli_0_2_100
         wordbook
         #wasmer
         #wasmer-pack
@@ -244,6 +257,7 @@ in {
         wineWowPackages.staging                     # wine-staging (version with experimental features)
         winetricks                                  # winetricks (all versions)
         wineWowPackages.waylandFull                 # native wayland support (unstable)
+        wireguard-tools
         bottles                                     # a wine prefix UI
         wl-clipboard-rs
         (hiPrio xwayland)
