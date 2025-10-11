@@ -77,6 +77,8 @@ table ip mytable {
         oifname "lo" accept
         oifname "wlp0s20f3" ip daddr { 10.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12 } accept
         oifname "tun0" accept
+        oifname "wg0-mullvad" accept
+        ip daddr 10.64.0.0/10 accept   # internal Mullvad ranges
         ip protocol icmp limit rate 10/second burst 20 packets accept
         log prefix "OUTPUT-DROP: " level debug flags all counter packets 12 bytes 738 drop
     }
