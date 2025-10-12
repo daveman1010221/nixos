@@ -20,6 +20,9 @@ in {
           extensions = [ "rust-src" "rust-analyzer" "miri" ];
         })
 
+        ananicy-cpp
+        ananicy-rules-cachyos
+
         android-tools
         android-udev-rules
 
