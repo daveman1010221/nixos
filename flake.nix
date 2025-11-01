@@ -56,7 +56,7 @@
     lib = nixpkgs.lib;
     system = "x86_64-linux";
 
-    pkgs = import nixpkgs { system = "x86_64-linux"; };
+    pkgs = import nixpkgs { inherit system; };
 
     # Step 1: Dynamically import MOK certs into the Nix store
     certsDerivation = pkgs.runCommand "certs" {} ''
@@ -103,7 +103,7 @@
       (import ./flakes/overlays/git-hooks.nix)
 
       (final: prev: {
-        sed-key = sed-key.packages.${prev.system}.default;
+        sed-key = sed-key.packages.${prev.stdenv.hostPlatform.system}.default;
       })
 
     ];
@@ -704,7 +704,7 @@
             system.stateVersion = "24.05";
           })
         ]
-        ++ hostModules;                 # every per–host extra module
+        ++ hostModules;
       };
   in {
     nixosConfigurations =

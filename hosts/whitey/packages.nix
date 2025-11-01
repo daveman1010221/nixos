@@ -144,7 +144,7 @@ in {
         git-filter-repo
         glmark2
         furmark
-        glxinfo
+        mesa-demos
         graphviz
         grc
         grex
@@ -200,7 +200,7 @@ in {
         nvtopPackages.intel
         openssl
         openssl.dev
-        ollama-cuda
+        #ollama-cuda
         pandoc
         patool
         parted
@@ -263,7 +263,7 @@ in {
         wireguard-tools
         bottles                                     # a wine prefix UI
         wl-clipboard-rs
-        (hiPrio xwayland)
+        (lib.hiPrio xwayland)
         xbindkeys
         xbindkeys-config
         yaru-theme
