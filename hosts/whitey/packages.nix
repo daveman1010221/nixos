@@ -24,7 +24,7 @@ in {
         ananicy-rules-cachyos
 
         android-tools
-        android-udev-rules
+        #android-udev-rules
 
         # Tauri dev
         cargo-generate

@@ -234,6 +234,7 @@
 
             nix = {
               settings = {
+                extra-platforms = [ "aarch64-linux" ];
                 substituters = [
                 ];
                 trusted-public-keys = [
@@ -285,6 +286,7 @@
                       mkdir -p "$out/hooks"
                       install -m0755 "${pkgs.commitMsgHook}/bin/commit-msg-hook" \
                                      "$out/hooks/commit-msg"
+                      chmod -R g+rx "$out"
                     '';
                   };
                 }
@@ -568,7 +570,7 @@
               # Enable the OpenSSH daemon.
               openssh.enable = true;
 
-              udev.packages = [ pkgs.android-udev-rules ];
+              # udev.packages = [ pkgs.android-udev-rules ];
             };
 
             systemd.user.services.xdg-desktop-portal-cosmic = {
@@ -638,6 +640,12 @@
             #   text = lib.concatMapStringsSep "\n" createGitConfigScript userGitConfigs;
             #   deps = [ ];
             # };
+            system.activationScripts.gitTemplatesOwnership = ''
+              if [ -d /etc/git-templates ]; then
+                chown -R root:users /etc/git-templates
+                chmod -R g+rx /etc/git-templates
+              fi
+            '';
 
             # Set timezone to US Eastern Standard Time
             time.timeZone = "America/New_York";
@@ -645,6 +653,7 @@
             # Define a user account. Don't forget to set a password with ‘passwd’.
             users.users.djshepard = {
               isNormalUser = true;
+              description = "David Shepard";
 
               # 'mkpasswd'
               hashedPassword = ''$y$j9T$TsZjcgKr0u3TvD1.0de.W/$c/utzJh2Mkg.B38JKR7f3rQprgZ.RwNvUaoGfE/OD8D'';

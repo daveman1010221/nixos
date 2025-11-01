@@ -1,6 +1,10 @@
 { lib, ... }:
 {
   boot = {
+    binfmt.emulatedSystems = [
+      "aarch64-linux"
+    ];
+    binfmt.addEmulatedSystemsToNixSandbox = true;
     initrd = {
       includeDefaultModules = false;  # <-- This, along with
                                         # 'luks.cryptoModules' below,
