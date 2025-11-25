@@ -6,3 +6,4 @@ secrets.nix
 .nvimlog
 result
 hardware-configuration.nix
+target/
