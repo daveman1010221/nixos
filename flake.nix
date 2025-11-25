@@ -23,6 +23,9 @@
       flake = false;
     };
     sed-key.url = "github:daveman1010221/sed-key";
+
+    git-hooks.url = "github:daveman1010221/git-hooks";
+
   };
 
   # The audit package needs an overlay to get the permissions right for
@@ -51,7 +54,7 @@
   #   });
   # })
 
-  outputs = { self, nixpkgs, rust-overlay, myNeovimOverlay, dotacatFast, secrets-empty, sed-key }:
+  outputs = { self, nixpkgs, rust-overlay, myNeovimOverlay, dotacatFast, secrets-empty, sed-key, git-hooks }:
   let
     lib = nixpkgs.lib;
     system = "x86_64-linux";
@@ -100,7 +103,6 @@
     commonOverlays = [
       rust-overlay.overlays.default
       myNeovimOverlay.overlays.default
-      (import ./flakes/overlays/git-hooks.nix)
 
       (final: prev: {
         sed-key = sed-key.packages.${prev.stdenv.hostPlatform.system}.default;
@@ -278,23 +280,14 @@
                     runtime = "runc"
                   '';
                 }
-                {
-                  ## Provide a complete templates directory that already
-                  ## contains the hook – copy it so GC can’t break the path.
-                  "git-templates" = {
-                    source = pkgs.runCommand "git-templates" {} ''
-                      mkdir -p "$out/hooks"
-                      install -m0755 "${pkgs.commitMsgHook}/bin/commit-msg-hook" \
-                                     "$out/hooks/commit-msg"
-                      chmod -R g+rx "$out"
-                    '';
-                  };
-                }
               ];
 
               systemPackages = myPackages.myPkgs;
 
               sessionVariables.COSMIC_DATA_CONTROL_ENABLED = 1;
+
+              # Make Git use this directory system-wide
+              sessionVariables.GIT_TEMPLATE_DIR = "/var/lib/git-templates";
 
             };
 
@@ -346,7 +339,7 @@
                 package = pkgs.gitFull;
 
                 # Point git at the templates we drop in /etc below.
-                config.init.templatedir = "/etc/git-templates";
+                config.init.templatedir = "/var/lib/git-templates";
               };
 
               gnupg.agent = {
@@ -573,6 +566,14 @@
               # udev.packages = [ pkgs.android-udev-rules ];
             };
 
+            # Create a persistent git template directory under /var/lib
+            systemd.tmpfiles.rules = [
+              # Create directory if missing
+              "d /var/lib/git-templates/hooks 0775 root users -"
+              # Copy hook binary into it at boot
+              "C /var/lib/git-templates/hooks/commit-msg 0775 root users - ${git-hooks.packages.${pkgs.system}.commit-msg-hook}/bin/commit-msg"
+            ];
+
             systemd.user.services.xdg-desktop-portal-cosmic = {
               enable = true;
               description = "xdg-desktop-portal for COSMIC";
@@ -640,12 +641,6 @@
             #   text = lib.concatMapStringsSep "\n" createGitConfigScript userGitConfigs;
             #   deps = [ ];
             # };
-            system.activationScripts.gitTemplatesOwnership = ''
-              if [ -d /etc/git-templates ]; then
-                chown -R root:users /etc/git-templates
-                chmod -R g+rx /etc/git-templates
-              fi
-            '';
 
             # Set timezone to US Eastern Standard Time
             time.timeZone = "America/New_York";
