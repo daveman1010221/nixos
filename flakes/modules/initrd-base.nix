@@ -14,21 +14,21 @@
   
       # Ensure the initrd includes necessary modules for encryption, RAID, and filesystems
       availableKernelModules = lib.mkForce [
-        "encrypted_keys"
-        "trusted"
+        #"encrypted_keys"
+        #"trusted"
 
         "nls_cp437"
         "nls_iso8859_1"
         "crypto_null"
         "cryptd"
-        "sha256"
+        #"sha256"
         "vmd"
   
         # crypto
         "aesni_intel"     # The gold standard for FIPS 140-2/3 compliance
                           # Hardware-accelerate AES within the Intel CPU
         "gf128mul"
-        "crypto_simd"
+        #"crypto_simd"
   
         "dm_crypt"        # LUKS encryption support for device mapper storage infrastructure
   
@@ -86,7 +86,7 @@
           "aesni_intel"
           "essiv"
           "xts"
-          "sha256"
+          #"sha256"
         ];
         mitigateDMAAttacks = true;
       };

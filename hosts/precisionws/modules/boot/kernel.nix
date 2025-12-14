@@ -1,4 +1,9 @@
-{ pkgsForHost, lib, ... }:
+#{ pkgsForHost, lib, ... }:
+{ pkgs, lib, ... }:
+let
+  _ = assert pkgs ? hardened_linux_kernel;
+      true;
+in
 {
   boot = {
     # Configure the kernel
@@ -6,23 +11,33 @@
     # This bug-checks when GDM tries to initialize the external Nvidia display,
     # so clearly some sort of issue with the Nvidia driver and the hardened
     # kernel. It works fine for 'on the go' config, though. Considering making two kernel configs.
+    #kernelPackages = pkgsForHost.linuxPackages_latest;
+    #kernelPackages = pkgsForHost.linuxKernel.packages.linux_6_17;
+
+    # Currently built on top of 6.17 generic, I think.
     #kernelPackages = pkgsForHost.hardened_linux_kernel;
+    kernelPackages = pkgs.hardened_linux_kernel;
 
   initrd.availableKernelModules = lib.mkForce [
     "nls_cp437"
     "nls_iso8859_1"
     "crypto_null"
     "cryptd"
-    "sha256"
-    "sha256_generic"
+    #"sha256"
+    #"sha256_generic"
     "vmd"
     "cbc"
+
+    # keyboard stack for internal laptop keyboard
+    "i8042"
+    "atkbd"
+    "serio_raw"
 
     # crypto
     "aesni_intel"     # The gold standard for FIPS 140-2/3 compliance
                       # Hardware-accelerate AES within the Intel CPU
     "gf128mul"
-    "crypto_simd"
+    #"crypto_simd"
     "dm_crypt"        # LUKS encryption support for device mapper storage infrastructure
     "essiv"           # Encrypted Salt-Sector Initialization Vector is a transform for various encryption modes, mostly supporting block device encryption
     "authenc"
@@ -56,13 +71,14 @@
 
     # hardware support modules
     "ahci"            # SATA disk support
-    "kvm-amd"
+    #"kvm-amd"
     "libahci"
     "sd_mod"          # SCSI disk support (/dev/sdX)
     "uas"             # USB attached SCSI (booting from USB)
     "usbcore"         # USB support
     "usbhid"
     "i2c_hid"
+    "i2c_hid_acpi"    # often needed on Dell
     "hid_multitouch"
     "hid_sensor_hub"
     "intel_ishtp_hid"
@@ -78,11 +94,11 @@
     "cbc"
     "cryptd"
     "crypto_null"
-    "crypto_simd"
+    #"crypto_simd"
     "essiv"
     "gf128mul"
-    "sha256"
-    "sha256_generic"
+    #"sha256"
+    #"sha256_generic"
     "xts"
   ];
 

@@ -146,27 +146,30 @@
           let
             overlayDir = hostDir + "/overlays";
 
-            # pick every *.nix that returns an overlay function
-            # keep only the first-level directory .nix files
             overlayFiles =
-            if builtins.pathExists overlayDir then
-              lib.filter
-                (p: lib.hasSuffix ".nix" p && 
-                     dirOf p == overlayDir &&
-                     baseNameOf p != "custom-kernel.nix")
-                (lib.filesystem.listFilesRecursive overlayDir)
-            else
-              [ ];   # no overlays for this host
+              if builtins.pathExists overlayDir then
+                lib.filter
+                  (p:
+                    lib.hasSuffix ".nix" (toString p)
+                    && toString (dirOf p) == toString overlayDir
+                    && baseNameOf p != "custom-kernel.nix")
+                  (lib.filesystem.listFilesRecursive overlayDir)
+              else
+                [ ];
           in
-            # import every *.nix in overlays/
-            map (path: { lib, ... }: import path { inherit lib; }) overlayFiles
-            # plus custom kernel overlay if it exists
+            # Import overlay files as overlays (final: prev: ...)
+            (map (path: import path) overlayFiles)
+            # Plus custom kernel overlay if it exists
             ++ lib.optional (builtins.pathExists (hostDir + "/overlays/custom-kernel.nix"))
-                 (import (hostDir + "/overlays/custom-kernel.nix") {
-                   inherit myConfig myPubCert myPrivKey;
-                 });
+              (import (hostDir + "/overlays/custom-kernel.nix") {
+                inherit myConfig myPubCert myPrivKey;
+              });
 
         pkgsForHost = pkgsFor hostOverlays system;
+
+        _ = lib.assertMsg (pkgsForHost ? hardened_linux_kernel)
+          "precisionws: hardened_linux_kernel missing from pkgsForHost. Either custom-kernel overlay not loaded or not an overlay.";
+
 
         myPackages = import (hostDir + /packages.nix) {
           pkgs = pkgsForHost;
@@ -504,7 +507,7 @@
 
               dnsmasq.enable = false;
 
-              expressvpn.enable = true;
+              # expressvpn.enable = true;
 
               flatpak.enable = true;
 
@@ -651,6 +654,7 @@
               description = "David Shepard";
 
               # 'mkpasswd'
+              description = "David Shepard";
               hashedPassword = ''$y$j9T$TsZjcgKr0u3TvD1.0de.W/$c/utzJh2Mkg.B38JKR7f3rQprgZ.RwNvUaoGfE/OD8D'';
               extraGroups = [ "wheel" "mlocate" "docker" "systemd-journal" "libvirtd" "kvm" ]; # Enable ‘sudo’ for the user.
               shell = pkgs.fish;

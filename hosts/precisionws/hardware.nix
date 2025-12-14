@@ -1,4 +1,4 @@
-{ pkgsForHost, ... }:
+{ config, pkgsForHost, ... }:
 
 {
   hardware = {
@@ -43,7 +43,7 @@
   
       #dynamicBoost.enable = true;
   
-      open = true;
+      open = false;
   
       # Modesetting is required.
       modesetting.enable = true;
@@ -64,7 +64,8 @@
   
       # Optionally, you may need to select the appropriate driver version for
       # your specific GPU.
-      #package = pkgsForHost.linux_kernel.nvidiaPackages.beta;
+      # package = config.boot.kernelPackages.nvidiaPackages.beta;
+      package = config.boot.kernelPackages.nvidia_x11_beta;
     };
   
     nvidia-container-toolkit = {

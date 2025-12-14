@@ -27,9 +27,9 @@ in {
             dhall.dhall-lang
           ];
         })
-        (hiPrio xwayland)
-        android-tools
-        android-udev-rules
+        (lib.hiPrio xwayland)
+        # android-tools
+        # android-udev-rules
         atkmm
         at-spi2-atk
         atuin
@@ -111,7 +111,7 @@ in {
         efivar
         ente-desktop
         esbuild
-        expressvpn
+        #expressvpn
         eza
         fd
         ffmpeg_8-full
@@ -127,12 +127,13 @@ in {
         fwupd-efi
         fzf
         gdk-pixbuf
+        gh
         gitFull
         git-cliff
         git-filter-repo
         glib
         glmark2
-        glxinfo
+        mesa-demos
         gobject-introspection
         graphviz
         grc
@@ -175,6 +176,10 @@ in {
         mdadm
         mdcat
         microsoft-edge
+        monero-gui
+        monero-cli
+        mullvad-vpn
+        mullvad-closest
         neofetch
         nerdctl
         nerd-fonts.fira-code
@@ -199,6 +204,7 @@ in {
         parted
         patool
         pciutils
+        pineapple-pictures
         pkg-config
         plocate
         podman

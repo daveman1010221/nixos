@@ -1,7 +1,7 @@
 table ip mytable {
     set inbound_whitelist {
         type inet_service
-        elements = { 22, 8080, 4173 }
+        elements = { 22, 8080, 4173, 7474, 7687 }
     }
 
     set vpn_ports {
@@ -57,6 +57,8 @@ table ip mytable {
         tcp dport @vpn_ports accept
         tcp dport { 7770, 8443 } accept
         tcp dport 8080 accept # Allow outbound traffic on port 8080
+        tcp dport 7474 accept # Allow outbound traffic on port 7474
+        tcp dport 7687 accept # Allow outbound traffic on port 7687
         tcp dport 4173 accept # Allow outbound traffic on port 4173
 
         # Allow ADB server and device over Wi-Fi
