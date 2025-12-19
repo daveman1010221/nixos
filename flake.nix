@@ -654,7 +654,6 @@
               description = "David Shepard";
 
               # 'mkpasswd'
-              description = "David Shepard";
               hashedPassword = ''$y$j9T$TsZjcgKr0u3TvD1.0de.W/$c/utzJh2Mkg.B38JKR7f3rQprgZ.RwNvUaoGfE/OD8D'';
               extraGroups = [ "wheel" "mlocate" "docker" "systemd-journal" "libvirtd" "kvm" ]; # Enable ‘sudo’ for the user.
               shell = pkgs.fish;

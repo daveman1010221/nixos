@@ -113,9 +113,9 @@
           "myNeovimOverlay",
           "flake-parts"
         ],
-        "git-hooks": "git-hooks",
+        "git-hooks": "git-hooks_2",
         "luvit-meta": "luvit-meta",
-        "nixpkgs": "nixpkgs_2"
+        "nixpkgs": "nixpkgs_3"
       },
       "locked": {
         "lastModified": 1755304025,
@@ -132,6 +132,25 @@
       }
     },
     "git-hooks": {
+      "inputs": {
+        "nixpkgs": "nixpkgs_2",
+        "rust-overlay": "rust-overlay"
+      },
+      "locked": {
+        "lastModified": 1762030047,
+        "narHash": "sha256-vR1OckajwYGG3ilHc/ub566zd6MWhvKPghTf1DJexeg=",
+        "owner": "daveman1010221",
+        "repo": "git-hooks",
+        "rev": "d86697be5c41ae32aa14ab622a6c1e60b917e818",
+        "type": "github"
+      },
+      "original": {
+        "owner": "daveman1010221",
+        "repo": "git-hooks",
+        "type": "github"
+      }
+    },
+    "git-hooks_2": {
       "inputs": {
         "flake-compat": "flake-compat",
         "gitignore": "gitignore",
@@ -283,6 +302,22 @@
     },
     "nixpkgs_2": {
       "locked": {
+        "lastModified": 1761907660,
+        "narHash": "sha256-kJ8lIZsiPOmbkJypG+B5sReDXSD1KGu2VEPNqhRa/ew=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "2fb006b87f04c4d3bdf08cfdbc7fab9c13d94a15",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_3": {
+      "locked": {
         "lastModified": 1718714799,
         "narHash": "sha256-FUZpz9rg3gL8NVPKbqU8ei1VkPLsTIfAJ2fdAf5qjak=",
         "owner": "nixos",
@@ -297,13 +332,13 @@
         "type": "github"
       }
     },
-    "nixpkgs_3": {
+    "nixpkgs_4": {
       "locked": {
-        "lastModified": 1765186076,
-        "narHash": "sha256-hM20uyap1a0M9d344I692r+ik4gTMyj60cQWO+hAYP8=",
+        "lastModified": 1765472234,
+        "narHash": "sha256-9VvC20PJPsleGMewwcWYKGzDIyjckEz8uWmT0vCDYK0=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "addf7cf5f383a3101ecfba091b98d0a1263dc9b8",
+        "rev": "2fbfb1d73d239d2402a8fe03963e37aab15abe8b",
         "type": "github"
       },
       "original": {
@@ -313,7 +348,7 @@
         "type": "github"
       }
     },
-    "nixpkgs_4": {
+    "nixpkgs_5": {
       "locked": {
         "lastModified": 1762596750,
         "narHash": "sha256-rXXuz51Bq7DHBlfIjN7jO8Bu3du5TV+3DSADBX7/9YQ=",
@@ -332,9 +367,10 @@
     "root": {
       "inputs": {
         "dotacatFast": "dotacatFast",
+        "git-hooks": "git-hooks",
         "myNeovimOverlay": "myNeovimOverlay",
-        "nixpkgs": "nixpkgs_3",
-        "rust-overlay": "rust-overlay",
+        "nixpkgs": "nixpkgs_4",
+        "rust-overlay": "rust-overlay_2",
         "secrets-empty": "secrets-empty",
         "sed-key": "sed-key"
       }
@@ -342,15 +378,16 @@
     "rust-overlay": {
       "inputs": {
         "nixpkgs": [
+          "git-hooks",
           "nixpkgs"
         ]
       },
       "locked": {
-        "lastModified": 1765465581,
-        "narHash": "sha256-fCXT0aZXmTalM3NPCTedVs9xb0egBG5BOZkcrYo5PGE=",
+        "lastModified": 1761964689,
+        "narHash": "sha256-Zo3LQQDz+64EQ9zor/WmeNTFLoZkjmhp0UY3G0D3seE=",
         "owner": "oxalica",
         "repo": "rust-overlay",
-        "rev": "99cc5667eece98bb35dcf35f7e511031a8b7a125",
+        "rev": "63d22578600f70d293aede6bc737efef60ebd97f",
         "type": "github"
       },
       "original": {
@@ -360,6 +397,26 @@
       }
     },
     "rust-overlay_2": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1765680428,
+        "narHash": "sha256-fyPmRof9SZeI14ChPk5rVPOm7ISiiGkwGCunkhM+eUg=",
+        "owner": "oxalica",
+        "repo": "rust-overlay",
+        "rev": "eb3898d8ef143d4bf0f7f2229105fc51c7731b2f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "oxalica",
+        "repo": "rust-overlay",
+        "type": "github"
+      }
+    },
+    "rust-overlay_3": {
       "inputs": {
         "nixpkgs": [
           "sed-key",
@@ -395,8 +452,8 @@
     "sed-key": {
       "inputs": {
         "flake-utils": "flake-utils_3",
-        "nixpkgs": "nixpkgs_4",
-        "rust-overlay": "rust-overlay_2"
+        "nixpkgs": "nixpkgs_5",
+        "rust-overlay": "rust-overlay_3"
       },
       "locked": {
         "lastModified": 1762918913,
