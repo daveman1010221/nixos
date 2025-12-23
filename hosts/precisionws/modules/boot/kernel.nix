@@ -6,16 +6,6 @@ let
 in
 {
   boot = {
-    # Configure the kernel
-  
-    # This bug-checks when GDM tries to initialize the external Nvidia display,
-    # so clearly some sort of issue with the Nvidia driver and the hardened
-    # kernel. It works fine for 'on the go' config, though. Considering making two kernel configs.
-    #kernelPackages = pkgsForHost.linuxPackages_latest;
-    #kernelPackages = pkgsForHost.linuxKernel.packages.linux_6_17;
-
-    # Currently built on top of 6.17 generic, I think.
-    #kernelPackages = pkgsForHost.hardened_linux_kernel;
     kernelPackages = pkgs.hardened_linux_kernel;
 
   initrd.availableKernelModules = lib.mkForce [

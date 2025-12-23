@@ -15,7 +15,7 @@
     "crypto_null"
     "cryptd"
     "sha256"
-    "sha256_generic"
+    #"sha256_generic"
     "vmd"
     "cbc"
 
@@ -23,7 +23,6 @@
     "aesni_intel"     # The gold standard for FIPS 140-2/3 compliance
                       # Hardware-accelerate AES within the Intel CPU
     "gf128mul"
-    "crypto_simd"
     "dm_crypt"        # LUKS encryption support for device mapper storage infrastructure
     "essiv"           # Encrypted Salt-Sector Initialization Vector is a transform for various encryption modes, mostly supporting block device encryption
     "authenc"
@@ -79,11 +78,10 @@
     "cbc"
     "cryptd"
     "crypto_null"
-    "crypto_simd"
     "essiv"
     "gf128mul"
     "sha256"
-    "sha256_generic"
+    #"sha256_generic"
     "xts"
   ];
 

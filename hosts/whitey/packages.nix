@@ -25,6 +25,7 @@ in {
 
         android-tools
         #android-udev-rules
+        bpftools
 
         # Tauri dev
         cargo-generate
@@ -256,12 +257,12 @@ in {
         #wasmer-pack
         wayland-utils
         wget
-        wine64                                      # support 64-bit only
-        wineWowPackages.staging                     # wine-staging (version with experimental features)
-        winetricks                                  # winetricks (all versions)
-        wineWowPackages.waylandFull                 # native wayland support (unstable)
+        wine64                                              # support 64-bit only
+        wineWowPackages.staging                             # wine-staging (version with experimental features)
+        winetricks                                          # winetricks (all versions)
+        wineWowPackages.waylandFull                         # native wayland support (unstable)
         wireguard-tools
-        bottles                                     # a wine prefix UI
+        (bottles.override { removeWarningPopup = true; })   # a wine prefix UI
         wl-clipboard-rs
         (lib.hiPrio xwayland)
         xbindkeys

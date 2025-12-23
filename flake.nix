@@ -76,7 +76,7 @@
     myPubCert = builtins.toFile "MOK.pem" mokPem;
     myPrivKey = builtins.toFile "MOK.priv" mokPriv;
 
-    myConfig = builtins.toFile ".config" (builtins.readFile (builtins.toString ./kernel/.config));
+    #myConfig = builtins.toFile ".config" (builtins.readFile (builtins.toString ./kernel/.config));
 
     # list of host folders
     hostNames = builtins.attrNames (
@@ -145,6 +145,7 @@
         hostOverlays =
           let
             overlayDir = hostDir + "/overlays";
+            hostKernelConfigPath = overlayDir + "/.config";
 
             overlayFiles =
               if builtins.pathExists overlayDir then
@@ -156,6 +157,12 @@
                   (lib.filesystem.listFilesRecursive overlayDir)
               else
                 [ ];
+
+            _ = lib.assertMsg (builtins.pathExists hostKernelConfigPath)
+              "Missing host kernel .config at ${toString hostKernelConfigPath}";
+
+            myConfig = builtins.toFile ".config"
+              (builtins.readFile (builtins.toString hostKernelConfigPath));
           in
             # Import overlay files as overlays (final: prev: ...)
             (map (path: import path) overlayFiles)
