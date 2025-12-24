@@ -2,11 +2,6 @@
 
 ## ⚡️ Modern, Automated NixOS System with Secure Dev Sandbox
 
-This repo is a batteries-included **NixOS system configuration** and build
-toolkit for sane, reproducible, and *secure* systems. If you’re tired of the
-same old half-assed “dotfile” starters or random shell scripts that break on
-first contact with reality—**this is the repo you fork**.
-
 ### Features
 
 - **Automated Installation**  
