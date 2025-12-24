@@ -22,17 +22,6 @@
   Enforces structured commit messages and maintains a real changelog using
   [git-cliff](https://github.com/orhun/git-cliff).
 
-### Who Should Fork This Repo?
-
-- Anyone who wants to **install NixOS the right way** (i.e., reproducible and
-  secure from the start).
-- People who actually care about build assurance, not just chasing “minimalist”
-  screenshots.
-- Developers who need a real, secure workstation environment that won’t get
-  pwned by the first npm package with a typo.
-- Security freaks, control freaks, and people who want to treat their system
-  like a source-bootstrapped, testable artifact.
-
 ### Quick Start
 
 1. **Clone the repo**
