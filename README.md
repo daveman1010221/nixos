@@ -1,7 +1,5 @@
 # nixos
 
-## ⚡️ Modern, Automated NixOS System with Secure Dev Sandbox
-
 ### Features
 
 - **Automated Installation**  
