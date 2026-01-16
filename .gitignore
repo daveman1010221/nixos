@@ -7,3 +7,7 @@ secrets.nix
 result
 hardware-configuration.nix
 target/
+MOK*
+
+# Never commit Machine Owner Key material
+**/MOK*
