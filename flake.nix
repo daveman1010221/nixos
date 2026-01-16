@@ -99,6 +99,17 @@
         # ./flakes/modules/base-desktop.nix ← when you split the giant block
       ];
 
+    # ── discover global overlays (flakes/overlays) ───────────────────────
+    overlayDir = ./flakes/overlays;
+
+    discoveredOverlays =
+      if builtins.pathExists overlayDir then
+        lib.sort (a: b: (toString a) < (toString b))
+          (lib.filter (p: lib.hasSuffix ".nix" (toString p))
+            (lib.filesystem.listFilesRecursive overlayDir))
+      else
+        [ ];
+
     # overlays shared by all hosts
     commonOverlays = [
       rust-overlay.overlays.default
@@ -108,7 +119,8 @@
         sed-key = sed-key.packages.${prev.stdenv.hostPlatform.system}.default;
       })
 
-    ];
+    ]
+    ++ (map (p: import p) discoveredOverlays);
 
     # helper function: overlayed nixpkgs for any host
     pkgsFor = extraOverlays: sys:
@@ -118,9 +130,6 @@
         config = {
           allowUnfree = true;
           doCheck = false;  # This doesn't seem to help, at least in all circumstances. This disables running test during package builds, globally.
-          nvidia = {
-            acceptLicense = true;
-          };
         };
       };
 
@@ -140,6 +149,32 @@
               (lib.filesystem.listFilesRecursive hostModuleDir)
           else
             [ ];
+
+        # ── host-local pkgs auto-discovery (hosts/<host>/pkgs/*/default.nix) ──
+        hostPkgsOverlay =
+          let
+            pkgsDir = hostDir + "/pkgs";
+
+            pkgNames =
+              if builtins.pathExists pkgsDir then
+                builtins.attrNames (lib.filterAttrs (_: t: t == "directory") (builtins.readDir pkgsDir))
+              else
+                [ ];
+
+            hasDefault = name: builtins.pathExists (pkgsDir + "/${name}/default.nix");
+
+            usableNames = lib.filter hasDefault pkgNames;
+          in
+          (final: prev:
+            builtins.listToAttrs (map (name: {
+              name = lib.replaceStrings [ "-" ] [ "_" ] name;  # optional: avoid attr headaches
+              value =
+                final.callPackage (pkgsDir + "/${name}") {
+                  # “nice-to-have” args that callPackage will only pass if the package asks for them
+                  stdenv = final.llvmPackages.stdenv;
+                  kernel = if final ? hardened_linux_kernel then final.hardened_linux_kernel.kernel else null;
+                };
+            }) usableNames));
 
         # ── gather host-specific overlays ────────────────────────────────
         hostOverlays =
@@ -170,7 +205,8 @@
             ++ lib.optional (builtins.pathExists (hostDir + "/overlays/custom-kernel.nix"))
               (import (hostDir + "/overlays/custom-kernel.nix") {
                 inherit myConfig myPubCert myPrivKey;
-              });
+              })
+            ++ [ hostPkgsOverlay ];
 
         pkgsForHost = pkgsFor hostOverlays system;
 
@@ -627,6 +663,13 @@
                 ExecStartPost = lib.mkAfter ''${pkgs.bash}/bin/bash -c "for n in $(docker ps -aq); do docker update --restart=no $n || true; done;"'';
               };
             };
+	    systemd.services.wpa_supplicant.serviceConfig = {
+	      PrivateMounts = lib.mkForce false;
+	      PrivateTmp = lib.mkForce false;
+	      ProtectSystem = lib.mkForce "no";
+	      ProtectHome = lib.mkForce false;
+	    };
+
             swapDevices = [
               {
                 device = "/dev/nix/swap";
