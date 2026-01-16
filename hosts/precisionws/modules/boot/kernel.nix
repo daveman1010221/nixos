@@ -11,7 +11,6 @@ in
   initrd.availableKernelModules = lib.mkForce [
     "nls_cp437"
     "nls_iso8859_1"
-    "crypto_null"
     "cryptd"
     #"sha256"
     #"sha256_generic"
@@ -98,7 +97,7 @@ in
       "i8042.unlock"
       "intel_idle.max_cstate=4"
       "intel_iommu=on"
-      #"lockdown=confidentiality"
+      "lockdown=confidentiality"
       "mitigations=auto"
       "pci=realloc"
       "seccomp=1"
@@ -112,7 +111,9 @@ in
       "fips=1"
       "dm_crypt.max_read_size=1048576"
       "dm_crypt.max_write_size=65536"
-      "NVreg_EnableGpuFirmware=1"
+      "nvidia-drm.modeset=0"
+      "i915.force_probe=!a788"
+      "xe.force_probe=a788"
     ];
   
     kernelPatches = [
@@ -133,7 +134,7 @@ in
     };
   };
 
-  hardware.cpu.amd.updateMicrocode = true;
+  hardware.cpu.intel.updateMicrocode = true;
   hardware.enableAllFirmware = true;
   hardware.enableAllHardware = true;
   hardware.graphics.enable = true;
