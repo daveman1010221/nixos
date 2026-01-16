@@ -1,7 +1,7 @@
 let
   pkgs = import <nixpkgs> {};
 in
-pkgs.linux_6_17.overrideAttrs (o: {
+pkgs.linux_6_18.overrideAttrs (o: {
   # IMPORTANT: don't use clangStdenv (wrapped) for the kernel build itself
   stdenv = pkgs.stdenv;
 
