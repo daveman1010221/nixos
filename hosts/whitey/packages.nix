@@ -196,7 +196,6 @@ in {
         nix-index
         nix-prefetch-git
         nixd
-        nvidia-container-toolkit
         nvme-cli
         nvtopPackages.intel
         openssl

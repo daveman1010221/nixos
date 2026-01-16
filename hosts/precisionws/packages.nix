@@ -192,8 +192,8 @@ in {
         nix-index
         nix-prefetch-git
         nodejs
-        nvidia-container-toolkit
-        nvim-pkg
+        neovim
+        #nvim-pkg
         nvme-cli
         nvtopPackages.intel
         ollama-cuda
@@ -236,7 +236,7 @@ in {
         usbutils
         uv
         viu
-        vkmark
+        #vkmark
         vulkan-tools
         vulnix
         #wasm-bindgen-cli_0_2_100
