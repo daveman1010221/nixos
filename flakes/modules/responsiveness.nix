@@ -26,11 +26,46 @@
     rulesProvider = pkgs.ananicy-rules-cachyos;
 
     serviceConfig = {
+      # If ananicy-cpp leaves behind a stale semaphore, clear it once
+      # before starting. Crucially: failure to remove it should NOT fail
+      # the service when it doesn't exist.
+      ExecStartPre = lib.mkForce [
+        # "reset" any packaged ExecStartPre (if present)
+        ""
+        # Best-effort cleanup; ignore errors like "No such file or directory"
+        "${pkgs.bash}/bin/bash -lc '${pkgs.ananicy-cpp}/bin/ananicy-cpp --force-remove-semaphore start >/dev/null 2>&1 || true'"
+      ];
+
       Delegate = "yes";
       ProtectControlGroups = false;
       ProtectKernelTunables = false;
       ReadWritePaths = [ "/sys/fs/cgroup" ];
+
+      # The packaged unit uses:
+      #   ExecStart=.../ananicy-cpp start
+      #
+      # Under systemd, calling the "start" subcommand is a footgun:
+      # it can daemonize / create a background instance / pidfile logic,
+      # and then subsequent starts see "already running" and exit 1,
+      # causing an infinite restart loop.
+      #
+      # ananicy-cpp requires an action positional (e.g. "start").
+      # We also defensively clear stale semaphore state that can cause
+      # "Ananicy Cpp is already running!" even when no process exists.
+      #
+      # NOTE: The empty string entry is systemd's "reset ExecStart" trick.
+      # Actual start: no cleanup flags, just start.
+      ExecStart = lib.mkForce [
+        ""
+        "${pkgs.ananicy-cpp}/bin/ananicy-cpp start"
+      ];
+
+      # Keep it simple; upstream unit already uses Type=simple.
       Type = lib.mkForce "simple";
+
+      # While validating, don't restart forever on clean exit(1) loops.
+      Restart = lib.mkForce "on-failure";
+      RestartSec = lib.mkForce 2;
     };
 
     settings = {

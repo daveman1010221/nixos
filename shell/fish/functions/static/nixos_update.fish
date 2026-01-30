@@ -18,7 +18,11 @@ function nixos_update --description 'Update NixOS configuration with automatic b
     # Run nixos-rebuild switch
     echo "Running nixos-rebuild switch..."
     pushd /etc/nixos
-    sudo nixos-rebuild switch --flake .#precisionws --override-input secrets-empty path:/boot/secrets/flakey.json
+    sudo nixos-rebuild switch \
+    	--flake .#precisionws \
+        --override-input secrets-empty path:/boot/secrets/flakey.json \
+        --option extra-sandbox-paths /boot/secrets \
+        --option allowed-impure-host-deps /boot/secrets
     popd
     set rebuild_status $status
 

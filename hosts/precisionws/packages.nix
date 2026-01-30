@@ -178,8 +178,9 @@ in {
         microsoft-edge
         monero-gui
         monero-cli
+	mullvad
         mullvad-vpn
-        mullvad-closest
+        mullvad-compass
         neofetch
         nerdctl
         nerd-fonts.fira-code
@@ -192,8 +193,7 @@ in {
         nix-index
         nix-prefetch-git
         nodejs
-        neovim
-        #nvim-pkg
+        nvim-pkg
         nvme-cli
         nvtopPackages.intel
         ollama-cuda

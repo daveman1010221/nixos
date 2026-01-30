@@ -61,23 +61,6 @@
 
     pkgs = import nixpkgs { inherit system; };
 
-    # Step 1: Dynamically import MOK certs into the Nix store
-    certsDerivation = pkgs.runCommand "certs" {} ''
-      mkdir -p $out
-      cp ${./kernel/MOK.pem} $out/MOK.pem
-      cp ${./kernel/MOK.priv} $out/MOK.priv
-    '';
-
-    # Step 2: Read the certs from the store after the derivation runs
-    mokPem = builtins.readFile "${certsDerivation}/MOK.pem";
-    mokPriv = builtins.readFile "${certsDerivation}/MOK.priv";
-
-    # Step 3: Ensure they are properly defined
-    myPubCert = builtins.toFile "MOK.pem" mokPem;
-    myPrivKey = builtins.toFile "MOK.priv" mokPriv;
-
-    #myConfig = builtins.toFile ".config" (builtins.readFile (builtins.toString ./kernel/.config));
-
     # list of host folders
     hostNames = builtins.attrNames (
       lib.filterAttrs 
@@ -177,38 +160,52 @@
             }) usableNames));
 
         # ── gather host-specific overlays ────────────────────────────────
-        hostOverlays =
-          let
-            overlayDir = hostDir + "/overlays";
-            hostKernelConfigPath = overlayDir + "/.config";
+	hostOverlays =
+	  let
+	    overlayDir = hostDir + "/overlays";
 
-            overlayFiles =
-              if builtins.pathExists overlayDir then
-                lib.filter
-                  (p:
-                    lib.hasSuffix ".nix" (toString p)
-                    && toString (dirOf p) == toString overlayDir
-                    && baseNameOf p != "custom-kernel.nix")
-                  (lib.filesystem.listFilesRecursive overlayDir)
-              else
-                [ ];
+	    customKernelPath = overlayDir + "/custom-kernel.nix";
+	    hasCustomKernel  = builtins.pathExists customKernelPath;
 
-            _ = lib.assertMsg (builtins.pathExists hostKernelConfigPath)
-              "Missing host kernel .config at ${toString hostKernelConfigPath}";
+	    hostKernelConfigPath = overlayDir + "/.config";
+            mokPemPath  = "/boot/secrets/MOK.pem";
+            mokPrivPath = "/boot/secrets/MOK.priv";
 
-            myConfig = builtins.toFile ".config"
-              (builtins.readFile (builtins.toString hostKernelConfigPath));
-          in
-            # Import overlay files as overlays (final: prev: ...)
-            (map (path: import path) overlayFiles)
-            # Plus custom kernel overlay if it exists
-            ++ lib.optional (builtins.pathExists (hostDir + "/overlays/custom-kernel.nix"))
-              (import (hostDir + "/overlays/custom-kernel.nix") {
-                inherit myConfig myPubCert myPrivKey;
-              })
-            ++ [ hostPkgsOverlay ];
+	    overlayFiles =
+	      if builtins.pathExists overlayDir then
+		lib.filter
+		  (p:
+		    lib.hasSuffix ".nix" (toString p)
+		    && toString (dirOf p) == toString overlayDir
+		    && baseNameOf p != "custom-kernel.nix")
+		  (lib.filesystem.listFilesRecursive overlayDir)
+	      else
+		[ ];
 
-        pkgsForHost = pkgsFor hostOverlays system;
+	    assertKernelConfig =
+	      lib.assertMsg (!hasCustomKernel || builtins.pathExists hostKernelConfigPath)
+	        "Missing host kernel .config at ${toString hostKernelConfigPath} (required because custom-kernel.nix exists)";
+
+	    # assertMokFiles =
+	    #   lib.assertMsg (!hasCustomKernel || (builtins.pathExists mokPemPath && builtins.pathExists mokPrivPath))
+	    #     "Missing /boot/secrets/MOK.pem and/or /boot/secrets/MOK.priv (required because custom-kernel.nix exists)";
+
+	    kernelInputs =
+	      if hasCustomKernel then {
+	        myConfig = builtins.toFile ".config"
+	          (builtins.readFile (builtins.toString hostKernelConfigPath));
+
+	        # pass paths only
+	        inherit mokPemPath mokPrivPath;
+	      } else
+	        { };
+	  in
+	    (map (path: import path) overlayFiles)
+	    ++ lib.optional hasCustomKernel
+	      (import customKernelPath kernelInputs)
+	    ++ [ hostPkgsOverlay ];
+
+	pkgsForHost = pkgsFor hostOverlays system;
 
         _ = lib.assertMsg (pkgsForHost ? hardened_linux_kernel)
           "precisionws: hardened_linux_kernel missing from pkgsForHost. Either custom-kernel overlay not loaded or not an overlay.";
@@ -282,6 +279,17 @@
 
             nix = {
               settings = {
+	        "allowed-impure-host-deps" = [
+		  "/boot/secrets/MOK.pem"
+		  "/boot/secrets/MOK.priv"
+		  "/boot/secrets/flakey.json"
+		];
+
+		# Make /boot visible inside the build sandbox
+		"extra-sandbox-paths" = [
+		  "/boot/secrets"
+		];
+
                 extra-platforms = [ "aarch64-linux" ];
                 substituters = [
                 ];
