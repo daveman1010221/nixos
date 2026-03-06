@@ -97,7 +97,7 @@ in
       "debugfs=off"
       "dm_crypt.max_read_size=1048576"
       "dm_crypt.max_write_size=65536"
-      "fips=0"
+      "fips=1"
       "i8042.unlock"
       "i915.force_probe=!a788"
       "intel_idle.max_cstate=4"

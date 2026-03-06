@@ -235,14 +235,15 @@
 
           ({ config, lib, pkgs, ... }: let
 
-            staticFunctions = lib.mapAttrs'
-              (fileName: _: {
-                name = "fish/vendor_functions.d/${fileName}";
-                value = {
-                  source = ./shell/fish/functions/static/${fileName};
-                };
-              })
-              (builtins.readDir ./shell/fish/functions/static);
+            staticFunctions =
+              lib.mapAttrs'
+                (fileName: _: {
+                  name = "fish/vendor_functions.d/${fileName}";
+                  value.source = pkgs.writeText fileName
+                    (builtins.readFile (./shell/fish/functions/static + "/${fileName}"));
+                })
+                (lib.filterAttrs (n: _: lib.hasSuffix ".fish" n)
+                  (builtins.readDir ./shell/fish/functions/static));
 
             templatedFunctions =
               lib.mapAttrs'
@@ -279,23 +280,26 @@
 
             nix = {
               settings = {
-	        "allowed-impure-host-deps" = [
-		  "/boot/secrets/MOK.pem"
-		  "/boot/secrets/MOK.priv"
-		  "/boot/secrets/flakey.json"
-		];
-
-		# Make /boot visible inside the build sandbox
-		"extra-sandbox-paths" = [
-		  "/boot/secrets"
-		];
-
                 extra-platforms = [ "aarch64-linux" ];
-                substituters = [
-                ];
-                trusted-public-keys = [
-                ];
+
+                keep-derivations = true;
+                keep-outputs = false;
+
+                substituters = [ ];
+
+                trusted-public-keys = [ ];
                 trusted-users = [ "root" "djshepard" ];
+
+	            "allowed-impure-host-deps" = [
+		          "/boot/secrets/MOK.pem"
+		          "/boot/secrets/MOK.priv"
+		          "/boot/secrets/flakey.json"
+		        ];
+
+                # Make /boot visible inside the build sandbox
+                "extra-sandbox-paths" = [
+                  "/boot/secrets"
+                ];
               };
               extraOptions = ''
                 experimental-features = nix-command flakes
