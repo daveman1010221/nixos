@@ -123,7 +123,14 @@
 
         # ── gather host-specific modules ─────────────────────────────────
         hostModuleDir = hostDir + "/modules";
-        
+
+        # Decide which firewall file to use
+        baseFirewall = ./firewall/nftables.nft;
+        hostFirewall = hostDir + "/firewall.nft";
+        firewallFile =
+          if builtins.pathExists hostFirewall
+          then hostFirewall else baseFirewall;
+
         hostModules =
           if builtins.pathExists hostModuleDir
           then
@@ -364,7 +371,7 @@
                 checkRuleset = true;
                 enable = true;
                 flushRuleset = true;
-                ruleset = builtins.readFile ./firewall/nftables.nft;
+                ruleset = builtins.readFile firewallFile;
               };
               useDHCP = lib.mkDefault true;
             };
