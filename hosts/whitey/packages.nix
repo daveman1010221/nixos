@@ -180,9 +180,10 @@ in {
         lvm2 # Provides LVM tools: pvcreate, vgcreate, lvcreate
         mdadm # RAID management
         mdcat
-        microsoft-edge
+        # microsoft-edge
         mullvad-vpn
-        mullvad-closest
+        mullvad-compass
+        mullvad
         plocate
         cowsay
         neofetch
@@ -245,7 +246,7 @@ in {
           ];
         })
         viu
-        vkmark
+        #vkmark
         vulkan-tools
         vulnix
         #wasm-pack

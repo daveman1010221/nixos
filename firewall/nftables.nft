@@ -30,6 +30,12 @@ table ip mytable {
         ip saddr @adb_device_ips tcp dport @adb_ports accept comment "ADB device → host"
         ip saddr @adb_device_ips tcp sport 40000-65535 accept comment "ADB high ports from device"
 
+        # Allow mDNS (Avahi) from local network
+        iifname "wlp120s0u2" ip saddr 192.168.0.0/16 udp dport 5353 accept comment "mDNS inbound"
+
+        # Allow multicast mDNS traffic
+        iifname "wlp120s0u2" ip daddr 224.0.0.251 udp dport 5353 accept comment "mDNS multicast (LAN only)"
+
         # Allow access to Kubernetes API server (default port 6443)
         tcp dport 6443 accept
 
@@ -44,7 +50,7 @@ table ip mytable {
         tcp dport { 10250, 10255 } accept
 
         jump sig_filter_input
-        iifname "wlp0s20f3" ip saddr { 10.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12 } accept
+        iifname "wlp120s0u2" ip saddr { 10.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12 } accept
         ip protocol icmp limit rate 10/second burst 20 packets accept
         log prefix "INPUT-DROP: " level debug flags all counter packets 0 bytes 0 drop
     }
@@ -52,7 +58,8 @@ table ip mytable {
     chain output {
         type filter hook output priority filter; policy drop;
         ct state established,related accept
-        udp dport { 53, 67, 68, 123, 5353 } accept
+        udp dport { 53, 67, 68, 123 } accept
+        oifname "wlp120s0u2" ip daddr 224.0.0.251 udp dport 5353 accept comment "mDNS outbound"
         udp dport @vpn_ports accept
         tcp dport @vpn_ports accept
         tcp dport { 7770, 8443 } accept
@@ -64,6 +71,9 @@ table ip mytable {
         # Allow ADB server and device over Wi-Fi
         ip daddr @adb_device_ips tcp sport @adb_ports accept comment "Host → ADB device"
         ip daddr @adb_device_ips tcp dport 40000-65535 accept comment "Host → ADB device high ports"
+
+        # Allow IPP printing to Epson
+        ip daddr 192.168.1.2 tcp dport 631 accept comment "IPP → Epson printer"
 
         # Allow DNS resolution
 
@@ -77,7 +87,7 @@ table ip mytable {
         ip daddr 172.18.0.0/16 accept
 
         oifname "lo" accept
-        oifname "wlp0s20f3" ip daddr { 10.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12 } accept
+        oifname "wlp120s0u2" ip daddr { 10.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12 } accept
         oifname "tun0" accept
         oifname "wg0-mullvad" accept
         ip daddr 10.64.0.0/10 accept   # internal Mullvad ranges
