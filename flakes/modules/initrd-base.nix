@@ -5,6 +5,7 @@
     binfmt.emulatedSystems = [
       "aarch64-linux"
     ];
+    binfmt.preferStaticEmulators = true;
     binfmt.addEmulatedSystemsToNixSandbox = true;
     initrd = {
       includeDefaultModules = false;  # <-- This, along with
