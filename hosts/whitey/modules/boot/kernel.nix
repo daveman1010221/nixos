@@ -12,7 +12,8 @@ in
       "tpm_tis_core"
     ];
 
-    kernelPackages = pkgs.hardened_linux_kernel;
+    # kernelPackages = pkgs.hardened_linux_kernel;
+    kernelPackages = pkgs.linuxKernel.packages.linux_6_18;
 
     initrd.availableKernelModules = lib.mkForce [
       "nls_cp437"

@@ -600,8 +600,8 @@
                 allowFrom = [ "localhost" ];
                 browsing = false;
                 defaultShared = false;
-                #drivers = with pkgs; [ gutenprint epson-escpr epson-escpr2 ];
-                drivers = with pkgs; [ gutenprint ];
+                drivers = with pkgs; [ gutenprint epson-escpr epson-escpr2 ];
+                # drivers = with pkgs; [ gutenprint ];
                 enable = true;
                 listenAddresses = [ "localhost:631" ];
                 logLevel = "debug";
