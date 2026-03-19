@@ -181,7 +181,7 @@ in {
 	mullvad
         mullvad-vpn
         mullvad-compass
-        neofetch
+        fastfetch
         nerdctl
         nerd-fonts.fira-code
         nerd-fonts.fira-mono

@@ -186,7 +186,7 @@ in {
         mullvad
         plocate
         cowsay
-        neofetch
+        fastfetch
         nerdctl
         nerd-fonts.fira-mono
         nerd-fonts.fira-code

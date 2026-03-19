@@ -1,7 +1,7 @@
 { lib, ... }:
 {
   boot = {
-    blacklistedKernelModules = [ "nvidia" "nvidia_modeset" "nvidia_uvm" "nvidia_drm" ];
+    blacklistedKernelModules = [ "nouveau" ];
     binfmt.emulatedSystems = [
       "aarch64-linux"
     ];
