@@ -5,6 +5,11 @@
     binfmt.emulatedSystems = [
       "aarch64-linux"
     ];
+
+    # preferStaticEmulators: use statically-linked qemu so aarch64 containers
+    # can run on x86 without the interpreter path being resolvable inside the
+    # container's mount namespace. Without this, running arm64 container images
+    # via podman fails with "no such file or directory" on the entrypoint.
     binfmt.preferStaticEmulators = true;
     binfmt.addEmulatedSystemsToNixSandbox = true;
     initrd = {
