@@ -62,6 +62,7 @@ in {
         clamav
         clangStdenv
         cl-wordle
+        clinfo
         cni-plugins
         containerd
         cosmic-bg
@@ -117,6 +118,7 @@ in {
         doas
         docker
         dosfstools # Provides mkfs.vfat for EFI partition
+        drm_info
         dust
         e2fsprogs # Provides mkfs.ext4
         efibootmgr
@@ -198,7 +200,7 @@ in {
         nix-prefetch-git
         nixd
         nvme-cli
-        nvtopPackages.intel
+        nvtopPackages.amd
         openssl
         openssl.dev
         #ollama-cuda
@@ -215,6 +217,9 @@ in {
         pwgen
         pyenv
         #qmk
+        radeontop
+        rocmPackages.rocm-smi
+        rocmPackages.rocminfo
         rootlesskit
         ripgrep
         ripgrep-all

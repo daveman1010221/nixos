@@ -102,6 +102,7 @@ in
       "nvme_core.default_ps_max_latency_us=0"
       "fips=1"
       "cgroup_no_v1=net_cls"
+      "video=efifb:off"
     ];
 
     kernelPatches = [ ];

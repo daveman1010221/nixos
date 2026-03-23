@@ -126,7 +126,7 @@
 
         # Decide which firewall file to use
         baseFirewall = ./firewall/nftables.nft;
-        hostFirewall = hostDir + "/firewall.nft";
+        hostFirewall = hostDir + "/nftables.nft";
         firewallFile =
           if builtins.pathExists hostFirewall
           then hostFirewall else baseFirewall;
@@ -497,18 +497,23 @@
               };
 
               # Configure PAM audit settings for specific services if necessary
-              pam.services = {
-                cosmic = {
-                  enable = true;
-                  text = ''
-                    auth   optional pam_gnome_keyring.so
-                    session optional pam_gnome_keyring.so auto_start
-                  '';
-                };
+              pam = {
+                loginLimits = [
+                  { domain = "*"; type = "-"; item = "memlock"; value = "unlimited"; }
+                ];
+                services = {
+                  cosmic = {
+                    enable = true;
+                    text = ''
+                      auth   optional pam_gnome_keyring.so
+                      session optional pam_gnome_keyring.so auto_start
+                    '';
+                  };
 
-                login = {
-                  # ttyAudit.enable = true;
-                  setLoginUid = true;
+                  login = {
+                    # ttyAudit.enable = true;
+                    setLoginUid = true;
+                  };
                 };
               };
             };
@@ -724,7 +729,7 @@
 
               # 'mkpasswd'
               hashedPassword = ''$y$j9T$TsZjcgKr0u3TvD1.0de.W/$c/utzJh2Mkg.B38JKR7f3rQprgZ.RwNvUaoGfE/OD8D'';
-              extraGroups = [ "wheel" "mlocate" "docker" "systemd-journal" "libvirtd" "kvm" ]; # Enable ‘sudo’ for the user.
+              extraGroups = [ "wheel" "mlocate" "docker" "systemd-journal" "libvirtd" "kvm" "video" "render" ]; # Enable ‘sudo’ for the user.
               shell = pkgs.fish;
               subUidRanges = [
                 {
