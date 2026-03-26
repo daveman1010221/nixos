@@ -80,8 +80,6 @@ in {
         cosmic-session
         cosmic-greeter
         cosmic-ext-ctl
-        cosmic-applets
-        cosmic-settings
         cosmic-launcher
         cosmic-protocols
         cosmic-wallpapers
@@ -91,7 +89,6 @@ in {
         cosmic-design-demo
         cosmic-notifications
         cosmic-ext-calculator
-        cosmic-settings-daemon
         cosmic-workspaces-epoch
         xdg-desktop-portal-cosmic
         cryptsetup

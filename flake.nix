@@ -347,6 +347,8 @@
                 }
               ];
 
+              # cosmic.excludePackages = [ pkgs.cosmic-settings-daemon pkgs.cosmic-applets ];
+
               systemPackages = myPackages.myPkgs;
 
               sessionVariables.COSMIC_DATA_CONTROL_ENABLED = 1;
@@ -384,6 +386,7 @@
               fish = {
                 enable = true;
                 useBabelfish = true;
+                #generateCompletions = false; # Hack...
                 vendor = {
                   completions.enable = true;
                   config.enable = true;
