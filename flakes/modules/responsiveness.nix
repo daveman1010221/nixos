@@ -18,211 +18,351 @@
   services.power-profiles-daemon.enable = true;
 
   ### ────────────────────────────────
-  ### ananicy-cpp foreground bias
+  ### system76-scheduler foreground bias
   ### ────────────────────────────────
-  services.ananicy = {
+  #
+  # Replaces ananicy-cpp. No BPF, no semaphores, no segfaults.
+  #
+  # system76-scheduler tunes CFS latency parameters globally (responsive on AC,
+  # conservative on battery) and assigns per-process nice/io priorities via
+  # named profiles with process matchers.
+  #
+  # NOTE: foregroundBoost is disabled — it requires DE-side cooperation
+  # (a GNOME shell extension or explicit Cosmic integration) to signal which
+  # window is in the foreground. Without that signal it does nothing useful.
+  # pipewireBoost works standalone and is kept.
+  #
+  # IO priority scale: 0 = highest, 7 = lowest (within a class).
+  #
+  services.system76-scheduler = {
     enable = true;
-    package = pkgs.ananicy-cpp;
-    rulesProvider = pkgs.ananicy-rules-cachyos;
-
-    serviceConfig = {
-      # If ananicy-cpp leaves behind a stale semaphore, clear it once
-      # before starting. Crucially: failure to remove it should NOT fail
-      # the service when it doesn't exist.
-      ExecStartPre = lib.mkForce [
-        # "reset" any packaged ExecStartPre (if present)
-        ""
-        # Best-effort cleanup; ignore errors like "No such file or directory"
-        "${pkgs.bash}/bin/bash -lc '${pkgs.ananicy-cpp}/bin/ananicy-cpp --force-remove-semaphore start >/dev/null 2>&1 || true'"
-      ];
-
-      Delegate = "yes";
-      ProtectControlGroups = false;
-      ProtectKernelTunables = false;
-      ReadWritePaths = [ "/sys/fs/cgroup" ];
-
-      # The packaged unit uses:
-      #   ExecStart=.../ananicy-cpp start
-      #
-      # Under systemd, calling the "start" subcommand is a footgun:
-      # it can daemonize / create a background instance / pidfile logic,
-      # and then subsequent starts see "already running" and exit 1,
-      # causing an infinite restart loop.
-      #
-      # ananicy-cpp requires an action positional (e.g. "start").
-      # We also defensively clear stale semaphore state that can cause
-      # "Ananicy Cpp is already running!" even when no process exists.
-      #
-      # NOTE: The empty string entry is systemd's "reset ExecStart" trick.
-      # Actual start: no cleanup flags, just start.
-      ExecStart = lib.mkForce [
-        ""
-        "${pkgs.ananicy-cpp}/bin/ananicy-cpp start"
-      ];
-
-      # Keep it simple; upstream unit already uses Type=simple.
-      Type = lib.mkForce "simple";
-
-      # While validating, don't restart forever on clean exit(1) loops.
-      Restart = lib.mkForce "on-failure";
-      RestartSec = lib.mkForce 2;
-    };
+    useStockConfig = false;
 
     settings = {
-      verbose = true;
-      check_freq = 10;
+      cfsProfiles = {
+        enable = true;
 
-      apply_cgroup = true;
-      cgroup_load = true;
-      cgroup_root = lib.mkForce "system.slice/ananicy-cpp.service";
-      cgroup_realtime_workaround = false;
+        # On battery / default: modest latency, energy-friendly
+        default = {
+          latency = 6;
+          nr-latency = 8;
+          wakeup-granularity = 1.0;
+          bandwidth-size = 5;
+          preempt = "voluntary";
+        };
 
-      type_load = true;
-      rule_load = true;
-      apply_nice = true;
-      apply_ioclass = true;
-      apply_ionice = true;
-      apply_sched = true;
-      apply_oom_score_adj = true;
-      check_disks_schedulers = true;
+        # On AC: tighten up CFS for desktop responsiveness
+        responsive = {
+          latency = 4;
+          nr-latency = 10;
+          wakeup-granularity = 0.5;
+          bandwidth-size = 3;
+          preempt = "full";
+        };
+      };
+
+      processScheduler = {
+        enable = true;
+        useExecsnoop = false; # execsnoop requires kheaders — bad under hardened kernel
+        refreshInterval = 10; # poll every 10s, matching old check_freq
+
+        foregroundBoost.enable = false;
+
+        pipewireBoost = {
+          enable = true;
+          profile = {
+            nice = -6;
+            ioClass = "best-effort";
+            ioPrio = 2;
+          };
+        };
+      };
     };
 
-    extraRules = [
-      #─────────────────────────────
-      # High-priority, interactive
-      #─────────────────────────────
-      # Keep CPU responsive, but don't let these bully disk with ionice=0.
-      { name = "code";              nice = -8; ioclass = "best-effort"; ionice = 3; type = "editor"; }
-      { name = "zed";               nice = -8; ioclass = "best-effort"; ionice = 3; type = "editor"; }
-      { name = "nvim";              nice = -8; ioclass = "best-effort"; ionice = 3; type = "editor"; }
-      { name = "kitty";             nice = -8; ioclass = "best-effort"; ionice = 3; type = "terminal"; }
-      { name = "librewolf";         nice = -6; ioclass = "best-effort"; ionice = 3; type = "browser"; }
-      { name = "microsoft-edge";    nice = -6; ioclass = "best-effort"; ionice = 3; type = "browser"; }
-      { name = "signal-desktop";    nice = -6; ioclass = "best-effort"; ionice = 3; type = "comms"; }
-      { name = "zoom";              nice = -6; ioclass = "best-effort"; ionice = 3; type = "comms"; }
-      { name = "zoom-us";           nice = -6; ioclass = "best-effort"; ionice = 3; type = "comms"; }
+    # ── Process priority assignments ────────────────────────────────────
+    #
+    # Groups map roughly 1:1 to the old ananicy extraRules.
+    # system76-scheduler matches by process name (executable basename).
+    #
+    assignments = {
 
-      #─────────────────────────────
-      # Cosmic processes — keep smooth
-      #─────────────────────────────
-      # Compositor smoothness is mostly CPU scheduling; don't over-tune IO here.
-      { name = "cosmic-comp";       nice = -5; ioclass = "best-effort"; ionice = 4; type = "compositor"; }
-      { name = "cosmic-session";    nice = -3; ioclass = "best-effort"; ionice = 4; type = "desktop"; }
-      { name = "cosmic-panel";      nice = -3; ioclass = "best-effort"; ionice = 4; type = "desktop"; }
-      { name = "cosmic-bg";         nice = 0;  ioclass = "best-effort"; ionice = 5; type = "service"; }
-      { name = "cosmic-settings";   nice = 0;  ioclass = "best-effort"; ionice = 5; type = "service"; }
-      { name = "xdg-desktop-portal-cosmic"; nice = 0; ioclass = "best-effort"; ionice = 5; type = "service"; }
+      #──────────────────────────────────────────────────────────
+      # Editors & terminals — high interactive priority
+      #──────────────────────────────────────────────────────────
+      editors = {
+        nice = -8;
+        ioClass = "best-effort";
+        ioPrio = 3;
+        matchers = [ "code" "zed" "nvim" ];
+      };
 
-      #─────────────────────────────
-      # Cosmic desktop — additional processes
-      #─────────────────────────────
+      terminals = {
+        nice = -8;
+        ioClass = "best-effort";
+        ioPrio = 3;
+        matchers = [ "kitty" ];
+      };
 
-      # Login / greeter path (keep stable, not "fast")
-      { name = "cosmic-greeter-daemon"; nice = 0;  ioclass = "best-effort"; ionice = 5; type = "desktop"; }
-      { name = "cosmic-greeter";        nice = 0;  ioclass = "best-effort"; ionice = 5; type = "desktop"; }
+      #──────────────────────────────────────────────────────────
+      # Browsers & comms
+      #──────────────────────────────────────────────────────────
+      browsers = {
+        nice = -6;
+        ioClass = "best-effort";
+        ioPrio = 3;
+        matchers = [ "librewolf" "microsoft-edge" ];
+      };
 
-      # Core UX: these are the “if they stutter you notice” set
-      { name = "cosmic-launcher";       nice = -4; ioclass = "best-effort"; ionice = 4; type = "desktop"; }
-      { name = "cosmic-workspaces";     nice = -4; ioclass = "best-effort"; ionice = 4; type = "desktop"; }
-      { name = "cosmic-osd";            nice = -4; ioclass = "best-effort"; ionice = 4; type = "desktop"; }
-      { name = "cosmic-app-library";    nice = -3; ioclass = "best-effort"; ionice = 4; type = "desktop"; }
-      { name = "cosmic-app-list";       nice = -3; ioclass = "best-effort"; ionice = 4; type = "desktop"; }
+      comms = {
+        nice = -6;
+        ioClass = "best-effort";
+        ioPrio = 3;
+        matchers = [ "signal-desktop" "zoom" "zoom-us" ];
+      };
 
-      # Settings/notifications are interactive but not latency-critical like the compositor
-      { name = "cosmic-settings-daemon"; nice = -2; ioclass = "best-effort"; ionice = 5; type = "service"; }
-      { name = "cosmic-notifications";   nice = -2; ioclass = "best-effort"; ionice = 5; type = "service"; }
+      #──────────────────────────────────────────────────────────
+      # Cosmic compositor & core session — keep smooth
+      #──────────────────────────────────────────────────────────
+      cosmic-compositor = {
+        nice = -5;
+        ioClass = "best-effort";
+        ioPrio = 4;
+        matchers = [ "cosmic-comp" ];
+      };
 
-      # Applets: lots of tiny processes; give them mild priority so panel interactions stay crisp
-      { name = "cosmic-applet-audio";         nice = -1; ioclass = "best-effort"; ionice = 5; type = "desktop"; }
-      { name = "cosmic-applet-network";       nice = -1; ioclass = "best-effort"; ionice = 5; type = "desktop"; }
-      { name = "cosmic-applet-notifications"; nice = -1; ioclass = "best-effort"; ionice = 5; type = "desktop"; }
-      { name = "cosmic-applet-power";         nice = -1; ioclass = "best-effort"; ionice = 5; type = "desktop"; }
-      { name = "cosmic-applet-time";          nice = -1; ioclass = "best-effort"; ionice = 5; type = "desktop"; }
+      cosmic-session = {
+        nice = -3;
+        ioClass = "best-effort";
+        ioPrio = 4;
+        matchers = [
+          "cosmic-session"
+          "cosmic-panel"
+        ];
+      };
 
-      # Other applets: keep neutral; they shouldn’t matter much
-      { name = "cosmic-applet-bluetooth";      nice = 0; ioclass = "best-effort"; ionice = 6; type = "desktop"; }
-      { name = "cosmic-applet-input-sources";  nice = 0; ioclass = "best-effort"; ionice = 6; type = "desktop"; }
-      { name = "cosmic-applet-status-area";    nice = 0; ioclass = "best-effort"; ionice = 6; type = "desktop"; }
-      { name = "cosmic-applet-tiling";         nice = 0; ioclass = "best-effort"; ionice = 6; type = "desktop"; }
-      { name = "cosmic-applet-minimize";       nice = 0; ioclass = "best-effort"; ionice = 6; type = "desktop"; }
+      #──────────────────────────────────────────────────────────
+      # Cosmic UX — launcher, workspaces, OSD: noticeable if they stutter
+      #──────────────────────────────────────────────────────────
+      cosmic-ux = {
+        nice = -4;
+        ioClass = "best-effort";
+        ioPrio = 4;
+        matchers = [
+          "cosmic-launcher"
+          "cosmic-workspaces"
+          "cosmic-osd"
+        ];
+      };
 
-      # Panel helper procs (these are lightweight; don’t overfit)
-      { name = "cosmic-panel-button";     nice = 0; ioclass = "best-effort"; ionice = 6; type = "desktop"; }
+      cosmic-ux-secondary = {
+        nice = -3;
+        ioClass = "best-effort";
+        ioPrio = 4;
+        matchers = [
+          "cosmic-app-library"
+          "cosmic-app-list"
+          "cosmic-toplevel"
+        ];
+      };
 
-      # Files applet: can touch disk; keep it decent but not a bully
-      { name = "cosmic-files-applet";     nice = -1; ioclass = "best-effort"; ionice = 5; type = "desktop"; }
+      #──────────────────────────────────────────────────────────
+      # Cosmic settings & notifications
+      #──────────────────────────────────────────────────────────
+      cosmic-settings = {
+        nice = -2;
+        ioClass = "best-effort";
+        ioPrio = 5;
+        matchers = [
+          "cosmic-settings"
+          "cosmic-settings-daemon"
+          "cosmic-notifications"
+          "xdg-desktop-portal-cosmic"
+        ];
+      };
 
-      # Idle manager: this is not something you want competing with your actual work
-      { name = "cosmic-idle";             nice = 8;  ioclass = "idle"; type = "service"; }
+      #──────────────────────────────────────────────────────────
+      # Cosmic applets — panel interactions should feel crisp
+      #──────────────────────────────────────────────────────────
+      cosmic-applets-primary = {
+        nice = -1;
+        ioClass = "best-effort";
+        ioPrio = 5;
+        matchers = [
+          "cosmic-applet-audio"
+          "cosmic-applet-network"
+          "cosmic-applet-notifications"
+          "cosmic-applet-power"
+          "cosmic-applet-time"
+          "cosmic-files-applet"
+        ];
+      };
 
-      # Pop launcher plugin used by Cosmic (toplevel integration)
-      { name = "cosmic-toplevel";         nice = -2; ioclass = "best-effort"; ionice = 5; type = "desktop"; }
+      cosmic-applets-secondary = {
+        nice = 0;
+        ioClass = "best-effort";
+        ioPrio = 6;
+        matchers = [
+          "cosmic-applet-bluetooth"
+          "cosmic-applet-input-sources"
+          "cosmic-applet-status-area"
+          "cosmic-applet-tiling"
+          "cosmic-applet-minimize"
+          "cosmic-panel-button"
+        ];
+      };
 
-      #─────────────────────────────
-      # Build / heavy work — deprioritize the actual hogs
-      #─────────────────────────────
-      # This is what makes your desktop jank: compilers, linkers, builders, compressors.
-      { name = "nix";               nice = 10; ioclass = "best-effort"; ionice = 6; type = "build"; }
-      { name = "nix-daemon";        nice = 10; ioclass = "best-effort"; ionice = 6; type = "build"; }
-      { name = "nix-store";         nice = 10; ioclass = "best-effort"; ionice = 6; type = "build"; }
-      { name = "rustc";             nice = 12; ioclass = "best-effort"; ionice = 6; type = "build"; }
-      { name = "cc1";               nice = 12; ioclass = "best-effort"; ionice = 6; type = "build"; }
-      { name = "cc1plus";           nice = 12; ioclass = "best-effort"; ionice = 6; type = "build"; }
-      { name = "clang";             nice = 12; ioclass = "best-effort"; ionice = 6; type = "build"; }
-      { name = "gcc";               nice = 12; ioclass = "best-effort"; ionice = 6; type = "build"; }
-      { name = "ld";                nice = 12; ioclass = "best-effort"; ionice = 6; type = "build"; }
-      { name = "ld.lld";            nice = 12; ioclass = "best-effort"; ionice = 6; type = "build"; }
-      { name = "collect2";          nice = 12; ioclass = "best-effort"; ionice = 6; type = "build"; }
-      { name = "ninja";             nice = 12; ioclass = "best-effort"; ionice = 6; type = "build"; }
-      { name = "make";              nice = 12; ioclass = "best-effort"; ionice = 6; type = "build"; }
-      { name = "cmake";             nice = 10; ioclass = "best-effort"; ionice = 6; type = "build"; }
-      { name = "meson";             nice = 10; ioclass = "best-effort"; ionice = 6; type = "build"; }
-      { name = "zstd";              nice = 12; ioclass = "best-effort"; ionice = 7; type = "build"; }
-      { name = "xz";                nice = 12; ioclass = "best-effort"; ionice = 7; type = "build"; }
-      { name = "gzip";              nice = 12; ioclass = "best-effort"; ionice = 7; type = "build"; }
-      { name = "bzip2";             nice = 12; ioclass = "best-effort"; ionice = 7; type = "build"; }
+      #──────────────────────────────────────────────────────────
+      # Cosmic support processes
+      #──────────────────────────────────────────────────────────
+      cosmic-support = {
+        nice = 0;
+        ioClass = "best-effort";
+        ioPrio = 5;
+        matchers = [
+          "cosmic-bg"
+          "cosmic-greeter"
+          "cosmic-greeter-daemon"
+        ];
+      };
 
-      # Container infrastructure — deprioritize CPU a bit, but do NOT "ioclass=idle" it.
-      # (Idle IO here can make *interactive* container-backed workflows feel randomly terrible.)
-      { name = "dockerd";            nice = 8;  ioclass = "best-effort"; ionice = 6; type = "build"; }
-      { name = "containerd";         nice = 8;  ioclass = "best-effort"; ionice = 6; type = "build"; }
-      { name = "buildkitd";          nice = 8;  ioclass = "best-effort"; ionice = 6; type = "build"; }
-      { name = "podman";             nice = 8;  ioclass = "best-effort"; ionice = 6; type = "build"; }
+      cosmic-idle = {
+        nice = 8;
+        ioClass = "idle";
+        matchers = [ "cosmic-idle" ];
+      };
 
-      # Keep kubectl interactive (remove the penalty)
-      { name = "kubectl";            nice = 0;  ioclass = "best-effort"; ionice = 4; type = "tool"; }
-      { name = "kind";               nice = 0;  ioclass = "best-effort"; ionice = 5; type = "tool"; }
+      #──────────────────────────────────────────────────────────
+      # Audio & video — stable, not bursty
+      #──────────────────────────────────────────────────────────
+      # pipewire itself is handled by pipewireBoost above.
+      audio-clients = {
+        nice = 0;
+        ioClass = "best-effort";
+        ioPrio = 4;
+        matchers = [
+          "wireplumber"
+          "cosmic-player"
+        ];
+      };
 
-      #─────────────────────────────
-      # Background services
-      #─────────────────────────────
+      video = {
+        nice = 0;
+        ioClass = "best-effort";
+        ioPrio = 5;
+        matchers = [ "cheese" "simple-scan" ];
+      };
 
-      # nix indexers / search daemons
-      { name = "nix-index";         nice = 15; ioclass = "idle"; type = "indexer"; }
-      { name = "nix-index-daemon";  nice = 15; ioclass = "idle"; type = "indexer"; }
-      { name = "nix-locate";        nice = 10; ioclass = "idle"; type = "indexer"; }
+      #──────────────────────────────────────────────────────────
+      # Network & VPN — don't IO-starve these
+      #──────────────────────────────────────────────────────────
+      network = {
+        nice = 0;
+        ioClass = "best-effort";
+        ioPrio = 4;
+        matchers = [ "NetworkManager" ];
+      };
 
-      # LSP can affect editor responsiveness; keep IO normal, just de-prio CPU a bit.
-      { name = "nixd";              nice = 8;  ioclass = "best-effort"; ionice = 6; type = "indexer"; }
+      vpn = {
+        nice = 5;
+        ioClass = "best-effort";
+        ioPrio = 5;
+        matchers = [ "mullvad-daemon" ];
+      };
 
-      { name = "updatedb";          nice = 15; ioclass = "idle"; type = "maintenance"; }
-      { name = "fwupd";             nice = 10; ioclass = "idle"; type = "maintenance"; }
-      { name = "fwupd-efi";         nice = 10; ioclass = "idle"; type = "maintenance"; }
-      { name = "cupsd";             nice = 5;  ioclass = "best-effort"; ionice = 6; type = "service"; }
+      #──────────────────────────────────────────────────────────
+      # System services
+      #──────────────────────────────────────────────────────────
+      printing = {
+        nice = 5;
+        ioClass = "best-effort";
+        ioPrio = 6;
+        matchers = [ "cupsd" ];
+      };
 
-      # Don't IO-starve VPN/Network management.
-      { name = "mullvad-daemon";    nice = 5;  ioclass = "best-effort"; ionice = 5; type = "network"; }
-      { name = "networkmanager";    nice = 0;  ioclass = "best-effort"; ionice = 4; type = "network"; }
+      firmware = {
+        nice = 10;
+        ioClass = "idle";
+        matchers = [ "fwupd" "fwupd-efi" ];
+      };
 
-      #─────────────────────────────
-      # Audio and video keep stable
-      #─────────────────────────────
-      { name = "pipewire";          nice = 0;  ioclass = "best-effort"; ionice = 4; type = "audio"; }
-      { name = "pipewire-pulse";    nice = 0;  ioclass = "best-effort"; ionice = 4; type = "audio"; }
-      { name = "wireplumber";       nice = 0;  ioclass = "best-effort"; ionice = 4; type = "audio"; }
-      { name = "cosmic-player";     nice = 0;  ioclass = "best-effort"; ionice = 5; type = "audio"; }
-      { name = "cheese";            nice = 0;  ioclass = "best-effort"; ionice = 5; type = "video"; }
-      { name = "simple-scan";       nice = 0;  ioclass = "best-effort"; ionice = 5; type = "video"; }
-    ];
+      #──────────────────────────────────────────────────────────
+      # Build tools — deprioritize the desktop-janking hogs
+      #──────────────────────────────────────────────────────────
+      nix-builds = {
+        nice = 10;
+        ioClass = "best-effort";
+        ioPrio = 6;
+        matchers = [
+          "nix"
+          "nix-daemon"
+          "nix-store"
+          "cmake"
+          "meson"
+        ];
+      };
+
+      compilers = {
+        nice = 12;
+        ioClass = "best-effort";
+        ioPrio = 6;
+        matchers = [
+          "rustc"
+          "cc1"
+          "cc1plus"
+          "clang"
+          "gcc"
+          "ld"
+          "ld.lld"
+          "collect2"
+          "ninja"
+          "make"
+        ];
+      };
+
+      compressors = {
+        nice = 12;
+        ioClass = "best-effort";
+        ioPrio = 7;
+        matchers = [ "zstd" "xz" "gzip" "bzip2" ];
+      };
+
+      # Container infra: deprioritize CPU but keep IO reasonable —
+      # ioClass=idle here tanks interactive container-backed workflows.
+      containers = {
+        nice = 8;
+        ioClass = "best-effort";
+        ioPrio = 6;
+        matchers = [ "dockerd" "containerd" "buildkitd" "podman" ];
+      };
+
+      # kubectl/kind are interactive tools, keep them snappy
+      kube-tools = {
+        nice = 0;
+        ioClass = "best-effort";
+        ioPrio = 4;
+        matchers = [ "kubectl" "kind" ];
+      };
+
+      #──────────────────────────────────────────────────────────
+      # Background indexers
+      #──────────────────────────────────────────────────────────
+      indexers = {
+        nice = 15;
+        ioClass = "idle";
+        matchers = [
+          "nix-index"
+          "nix-index-daemon"
+          "updatedb"
+        ];
+      };
+
+      # LSP touches disk but affects editor latency — keep IO normal
+      lsp = {
+        nice = 8;
+        ioClass = "best-effort";
+        ioPrio = 6;
+        matchers = [ "nixd" "nix-locate" ];
+      };
+    };
   };
 }

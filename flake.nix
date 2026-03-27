@@ -759,6 +759,7 @@
               docker = {
                 enable = true;
                 daemon.settings = {
+                    exec-opts = [ "native.cgroupdriver=cgroupfs" ];
                     iptables = false;
                     ip-forward = true;
                     live-restore = false;
