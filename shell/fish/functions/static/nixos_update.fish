@@ -23,7 +23,7 @@ function nixos_update --description 'Update NixOS configuration with automatic b
             --override-input secrets-empty path:/boot/secrets/flakey.json \
             --option extra-sandbox-paths /boot/secrets \
             --option allowed-impure-host-deps /boot/secrets
-    end 2>&1 | grep -Ev 'not writing modified lock file|Updated input .secrets-empty|^\s+'\''path:\./secrets-empty|^\s+[→]\s+'\''path:/boot/secrets/flakey'
+    end 2>&1 | grep -Ev --line-buffered 'not writing modified lock file|Updated input .secrets-empty|^\s+'\''path:\./secrets-empty|^\s+[→]\s+'\''path:/boot/secrets/flakey'
     popd
     set rebuild_status $status
     # After the rebuild, unmount only if we mounted them in this function
