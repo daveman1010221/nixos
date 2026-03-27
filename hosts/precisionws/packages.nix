@@ -14,22 +14,10 @@ let
 in {
     myPkgs = with pkgs; [
         wrapped-portal
-
         (rust-bin.nightly.latest.default.override {
           targets = [ "wasm32-unknown-unknown" ];
-          extensions = [ "rust-src" "rust-analyzer" ];
+          extensions = [ "rust-src" "rust-analyzer" "miri" ];
         })
-        (vscode-with-extensions.override {
-          vscodeExtensions = with vscode-extensions; [
-            bbenoist.nix
-            ms-azuretools.vscode-docker
-            dhall.vscode-dhall-lsp-server
-            dhall.dhall-lang
-          ];
-        })
-        (lib.hiPrio xwayland)
-        # android-tools
-        # android-udev-rules
         atkmm
         at-spi2-atk
         atuin
@@ -37,7 +25,7 @@ in {
         bandwhich
         bat
         bonnie
-        bottles
+        (bottles.override { removeWarningPopup = true; })   # a wine prefix UI
         bottom
         btop
         buildkit
@@ -53,35 +41,36 @@ in {
         cl-wordle
         cni-plugins
         containerd
-        cosmic-bg
-        cosmic-osd
-        cosmic-term
-        cosmic-idle
-        cosmic-edit
-        cosmic-comp
-        cosmic-store
-        cosmic-randr
-        cosmic-panel
-        cosmic-icons
-        cosmic-files
-        cosmic-player
-        cosmic-session
-        cosmic-greeter
-        cosmic-ext-ctl
-        cosmic-applets
-        cosmic-settings
-        cosmic-launcher
-        cosmic-protocols
-        cosmic-wallpapers
-        cosmic-screenshot
-        cosmic-ext-tweaks
         cosmic-applibrary
+        cosmic-bg
+        cosmic-comp
         cosmic-design-demo
-        cosmic-notifications
+        cosmic-edit
+        cosmic-ext-applet-caffeine
+        cosmic-ext-applet-external-monitor-brightness
+        cosmic-ext-applet-minimon
+        cosmic-ext-applet-privacy-indicator
         cosmic-ext-calculator
-        cosmic-settings-daemon
+        cosmic-ext-ctl
+        cosmic-ext-tweaks
+        cosmic-files
+        cosmic-greeter
+        cosmic-icons
+        cosmic-idle
+        cosmic-launcher
+        cosmic-notifications
+        cosmic-osd
+        cosmic-panel
+        cosmic-player
+        cosmic-protocols
+        cosmic-randr
+        cosmic-reader
+        cosmic-screenshot
+        cosmic-session
+        cosmic-store
+        cosmic-term
+        cosmic-wallpapers
         cosmic-workspaces-epoch
-        xdg-desktop-portal-cosmic
         cowsay
         cri-o
         cryptsetup
@@ -111,8 +100,8 @@ in {
         efivar
         ente-desktop
         esbuild
-        #expressvpn
         eza
+        fastfetch
         fd
         ffmpeg_8-full
         file
@@ -128,12 +117,11 @@ in {
         fzf
         gdk-pixbuf
         gh
-        gitFull
         git-cliff
         git-filter-repo
+        gitFull
         glib
         glmark2
-        mesa-demos
         gobject-introspection
         graphviz
         grc
@@ -163,6 +151,7 @@ in {
         kubectl
         kubernetes-helm
         libcanberra-gtk3
+        (lib.hiPrio xwayland)
         libreoffice-fresh
         librewolf
         librsvg
@@ -172,14 +161,11 @@ in {
         lshw
         lsof
         lvm2
-        maven
         mdadm
         mdcat
+        mesa-demos
         microsoft-edge
-        monero-gui
-        monero-cli
-	mullvad
-        mullvad-vpn
+        mullvad
         mullvad-compass
         fastfetch
         nerdctl
@@ -210,10 +196,8 @@ in {
         podman
         podman-compose
         podman-desktop
-        protonvpn-gui
         psmisc
         pwgen
-        # qmk
         ripgrep
         ripgrep-all
         rootlesskit
@@ -236,32 +220,25 @@ in {
         usbutils
         uv
         viu
-        #vkmark
         vulkan-tools
         vulnix
-        #wasm-bindgen-cli_0_2_100
-        #wasmer
-        #wasmer-pack
-        #wasm-pack
-        #wasmtime
         wayland-utils
         webkitgtk_4_1
-        weston
         wget
         wine64
         winetricks
-        wineWowPackages.staging
-        wineWowPackages.waylandFull
+        wineWow64Packages.staging
+        wineWow64Packages.waylandFull
         wireguard-tools
         wl-clipboard-rs
         wordbook
         xbindkeys
         xbindkeys-config
+        xdg-desktop-portal-cosmic
         yaru-theme
         zed-editor
         zellij
         zoom-us
     ];
-
     wrapped-portal = wrapped-portal;
 }
