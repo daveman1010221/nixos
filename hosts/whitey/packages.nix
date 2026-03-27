@@ -46,6 +46,10 @@ in {
         cosmic-comp
         cosmic-design-demo
         cosmic-edit
+        cosmic-ext-applet-caffeine
+        cosmic-ext-applet-external-monitor-brightness
+        cosmic-ext-applet-minimon
+        cosmic-ext-applet-privacy-indicator
         cosmic-ext-calculator
         cosmic-ext-ctl
         cosmic-ext-tweaks
@@ -60,6 +64,7 @@ in {
         cosmic-player
         cosmic-protocols
         cosmic-randr
+        cosmic-reader
         cosmic-screenshot
         cosmic-session
         cosmic-store
