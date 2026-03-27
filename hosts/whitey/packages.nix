@@ -2,7 +2,8 @@
   system,
   pkgs,
   rust-overlay,
-  dotacatFast
+  dotacatFast,
+  nix-k0s
 }:
 let
   wrapped-portal = pkgs.writeShellScriptBin "xdg-desktop-portal-cosmic-wrapper" ''
@@ -177,6 +178,7 @@ in {
         nftables
         nixd
         nix-index
+        nix-k0s.packages.${system}.k0s
         nix-prefetch-git
         nodejs
         nvim-pkg

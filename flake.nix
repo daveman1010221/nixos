@@ -26,6 +26,7 @@
 
     git-hooks.url = "github:daveman1010221/git-hooks";
 
+    nix-k0s.url = "github:daveman1010221/nix-k0s";
   };
 
   # The audit package needs an overlay to get the permissions right for
@@ -54,7 +55,7 @@
   #   });
   # })
 
-  outputs = { self, nixpkgs, rust-overlay, myNeovimOverlay, dotacatFast, secrets-empty, sed-key, git-hooks }:
+  outputs = { self, nixpkgs, rust-overlay, myNeovimOverlay, dotacatFast, secrets-empty, sed-key, git-hooks, nix-k0s }:
   let
     lib = nixpkgs.lib;
     system = "x86_64-linux";
@@ -220,7 +221,7 @@
 
         myPackages = import (hostDir + /packages.nix) {
           pkgs = pkgsForHost;
-          inherit rust-overlay dotacatFast system;
+          inherit rust-overlay dotacatFast nix-k0s system;
         };
 
         # read whatever the caller provided under the name `secrets-empty`
