@@ -257,9 +257,9 @@ in {
         wayland-utils
         wget
         wine64                                              # support 64-bit only
-        wineWowPackages.staging                             # wine-staging (version with experimental features)
+        wineWow64Packages.staging                             # wine-staging (version with experimental features)
         winetricks                                          # winetricks (all versions)
-        wineWowPackages.waylandFull                         # native wayland support (unstable)
+        wineWow64Packages.waylandFull                         # native wayland support (unstable)
         wireguard-tools
         (bottles.override { removeWarningPopup = true; })   # a wine prefix UI
         wl-clipboard-rs

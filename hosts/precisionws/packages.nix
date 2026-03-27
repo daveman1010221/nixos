@@ -210,7 +210,6 @@ in {
         podman
         podman-compose
         podman-desktop
-        protonvpn-gui
         psmisc
         pwgen
         # qmk
@@ -250,8 +249,8 @@ in {
         wget
         wine64
         winetricks
-        wineWowPackages.staging
-        wineWowPackages.waylandFull
+        wineWow64Packages.staging
+        wineWow64Packages.waylandFull
         wireguard-tools
         wl-clipboard-rs
         wordbook

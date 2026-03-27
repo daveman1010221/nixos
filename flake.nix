@@ -644,7 +644,7 @@
               # Create directory if missing
               "d /var/lib/git-templates/hooks 0775 root users -"
               # Copy hook binary into it at boot
-              "C /var/lib/git-templates/hooks/commit-msg 0775 root users - ${git-hooks.packages.${pkgs.system}.commit-msg-hook}/bin/commit-msg"
+              "C /var/lib/git-templates/hooks/commit-msg 0775 root users - ${git-hooks.packages.${pkgs.stdenv.hostPlatform.system}.commit-msg-hook}/bin/commit-msg"
             ];
 
             systemd.user.services.xdg-desktop-portal-cosmic = {

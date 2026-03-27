@@ -66,7 +66,19 @@
         useExecsnoop = false; # execsnoop requires kheaders — bad under hardened kernel
         refreshInterval = 10; # poll every 10s, matching old check_freq
 
-        foregroundBoost.enable = false;
+        foregroundBoost = {
+          enable = true;
+          foreground = {
+            nice = -6;
+            ioClass = "best-effort";
+            ioPrio = 0;
+          };
+          background = {
+            nice = 6;
+            ioClass = "best-effort";
+            ioPrio = 7;
+          };
+        };
 
         pipewireBoost = {
           enable = true;
