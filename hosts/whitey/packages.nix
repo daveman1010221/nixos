@@ -144,6 +144,7 @@ in {
         jdk
         jq
         jqp
+        k0sctl
         kernel-hardening-checker
         kind
         kitty
