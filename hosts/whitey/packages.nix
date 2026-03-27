@@ -14,141 +14,122 @@ let
 in {
     myPkgs = with pkgs; [
         wrapped-portal
-
         (rust-bin.nightly.latest.default.override {
           targets = [ "wasm32-unknown-unknown" ];
           extensions = [ "rust-src" "rust-analyzer" "miri" ];
         })
-
-        android-tools
-        #android-udev-rules
-        bpftools
-
-        # Tauri dev
-        cargo-generate
-        cargo-tauri
-        cargo-leptos
-        cachix
-        nodejs
-        gobject-introspection
-        at-spi2-atk
         atkmm
-        cairo
-        gdk-pixbuf
-        glib
-        gtk3
-        harfbuzz
-        librsvg
-        libsoup_3
-        pango
-        webkitgtk_4_1
-        tailwindcss
-        esbuild
-
-        nvim-pkg
-        #audit
+        at-spi2-atk
         atuin
         babelfish
         bandwhich
         bat
-        bottom
         bonnie
+        (bottles.override { removeWarningPopup = true; })   # a wine prefix UI
+        bottom
         btop
         buildkit
+        cachix
+        cairo
+        cargo-generate
+        cargo-leptos
+        cargo-tauri
         cheese
         clamav
+        clang_20
         clangStdenv
         cl-wordle
-        clinfo
         cni-plugins
         containerd
-        cosmic-bg
-        cosmic-osd
-        cosmic-term
-        cosmic-idle
-        cosmic-edit
-        cosmic-comp
-        cosmic-store
-        cosmic-randr
-        cosmic-panel
-        cosmic-icons
-        cosmic-files
-        cosmic-player
-        cosmic-session
-        cosmic-greeter
-        cosmic-ext-ctl
-        cosmic-launcher
-        cosmic-protocols
-        cosmic-wallpapers
-        cosmic-screenshot
-        cosmic-ext-tweaks
         cosmic-applibrary
+        cosmic-bg
+        cosmic-comp
         cosmic-design-demo
-        cosmic-notifications
+        cosmic-edit
         cosmic-ext-calculator
+        cosmic-ext-ctl
+        cosmic-ext-tweaks
+        cosmic-files
+        cosmic-greeter
+        cosmic-icons
+        cosmic-idle
+        cosmic-launcher
+        cosmic-notifications
+        cosmic-osd
+        cosmic-panel
+        cosmic-player
+        cosmic-protocols
+        cosmic-randr
+        cosmic-screenshot
+        cosmic-session
+        cosmic-store
+        cosmic-term
+        cosmic-wallpapers
         cosmic-workspaces-epoch
-        xdg-desktop-portal-cosmic
+        cowsay
+        cri-o
         cryptsetup
         cups
         deja-dup
         delta
         dhall
-        dhall-nix
-        dhall-yaml
-        dhall-json
-        dhall-docs
         dhall-bash
-        dhall-nixpkgs
+        dhall-docs
+        dhall-json
         dhall-lsp-server
-        dhallPackages.Prelude
+        dhall-nix
+        dhall-nixpkgs
         dhallPackages.dhall-kubernetes
-        haskellPackages.dhall-yaml
-        haskellPackages.dhall-toml
-        # haskellPackages.dhall-check <-- broken
-        # haskellPackages.dhall-secret <-- broken
-        haskellPackages.dhall-openapi
+        dhallPackages.Prelude
+        dhall-yaml
         direnv
         distrobox
         doas
         docker
-        dosfstools # Provides mkfs.vfat for EFI partition
-        drm_info
+        dosfstools
+        dotacatFast.packages.${system}.default
         dust
-        e2fsprogs # Provides mkfs.ext4
+        e2fsprogs
         efibootmgr
         efitools
         efivar
         ente-desktop
-        #epsonscan2
+        esbuild
         eza
+        fastfetch
         fd
         ffmpeg_8-full
         file
         findutils
-        #firefox
-        librewolf
         firmware-updater
         fish
         fishPlugins.bass.src
         fishPlugins.foreign-env.src
         fishPlugins.grc.src
         fortune
+        furmark
         fwupd-efi
         fzf
-        gitFull
-        # git-up    <-- Broken
+        gdk-pixbuf
+        gh
         git-cliff
         git-filter-repo
+        gitFull
+        glib
         glmark2
-        furmark
-        mesa-demos
+        gobject-introspection
         graphviz
         grc
         grex
         grub2_efi
         gst_all_1.gstreamer
+        gtk3
         gtkimageview
         gucharmap
+        harfbuzz
+        haskellPackages.dhall-openapi
+        haskellPackages.dhall-toml
+        haskellPackages.dhall-yaml
         hunspell
         hunspellDicts.en-us
         hyperfine
@@ -157,66 +138,65 @@ in {
         jq
         jqp
         kernel-hardening-checker
+        kind
         kitty
         kitty-img
         kitty-themes
         kompose
         kubectl
-        kind
         kubernetes-helm
-        cri-o
         libcanberra-gtk3
+        (lib.hiPrio xwayland)
         libreoffice-fresh
+        librewolf
+        librsvg
+        libsoup_3
         lld_20
         llvmPackages_20.clangUseLLVM
-        clang_20
-        dotacatFast.packages.${system}.default
         lshw
         lsof
-        lvm2 # Provides LVM tools: pvcreate, vgcreate, lvcreate
-        mdadm # RAID management
+        lvm2
+        mdadm
         mdcat
-        # microsoft-edge
-        mullvad-vpn
-        mullvad-compass
+        mesa-demos
         mullvad
-        plocate
-        cowsay
-        fastfetch
+        mullvad-compass
+        mullvad-vpn
         nerdctl
-        nerd-fonts.fira-mono
         nerd-fonts.fira-code
+        nerd-fonts.fira-mono
         networkmanager-iodine
         networkmanager-openvpn
         networkmanager-vpnc
         nftables
+        nixd
         nix-index
         nix-prefetch-git
-        nixd
+        nodejs
+        nvim-pkg
         nvme-cli
         nvtopPackages.amd
         openssl
         openssl.dev
-        #ollama-cuda
         pandoc
-        patool
+        pango
         parted
+        patool
         pciutils
+        pineapple-pictures
         pkg-config
+        plocate
         podman
         podman-compose
         podman-desktop
-        #expressvpn
         psmisc
         pwgen
-        pyenv
-        #qmk
         radeontop
-        rocmPackages.rocm-smi
-        rocmPackages.rocminfo
-        rootlesskit
         ripgrep
         ripgrep-all
+        rocmPackages.rocminfo
+        rocmPackages.rocm-smi
+        rootlesskit
         seahorse
         signal-desktop
         simple-scan
@@ -224,53 +204,37 @@ in {
         sqlite
         starship
         sysstat
-        #systeroid
-        trunk
-        #teams  <-- not currently supported on linux targets
+        tailwindcss
+        tealdeer
         tinyxxd
         tldr
-        tealdeer
         tmux
         tree
         tree-sitter
-        usbutils
+        trunk
         unzip
+        usbutils
         uv
-        (vscode-with-extensions.override {
-          vscodeExtensions = with vscode-extensions; [
-            bbenoist.nix
-            ms-azuretools.vscode-docker
-            dhall.vscode-dhall-lsp-server
-            dhall.dhall-lang
-          ];
-        })
         viu
-        #vkmark
         vulkan-tools
         vulnix
-        #wasm-pack
-        #wasmtime
-        #wasm-bindgen-cli_0_2_100
-        wordbook
-        #wasmer
-        #wasmer-pack
         wayland-utils
+        webkitgtk_4_1
         wget
-        wine64                                              # support 64-bit only
-        wineWow64Packages.staging                             # wine-staging (version with experimental features)
-        winetricks                                          # winetricks (all versions)
-        wineWow64Packages.waylandFull                         # native wayland support (unstable)
+        wine64
+        winetricks
+        wineWow64Packages.staging
+        wineWow64Packages.waylandFull
         wireguard-tools
-        (bottles.override { removeWarningPopup = true; })   # a wine prefix UI
         wl-clipboard-rs
-        (lib.hiPrio xwayland)
+        wordbook
         xbindkeys
         xbindkeys-config
+        xdg-desktop-portal-cosmic
         yaru-theme
         zed-editor
         zellij
         zoom-us
     ];
-
     wrapped-portal = wrapped-portal;
 }
