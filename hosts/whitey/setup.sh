@@ -2340,7 +2340,7 @@ if [[ ! -e "$nvme0_path" || ! -e "$nvme1_path" ]]; then
 fi
 
 # Validate extracted values against hardware-configuration.nix
-echo -e "\033[1;34m[INFO]\033[0m Verifying extracted values exist in hardware.nix..."
+echo -e "\033[1;34m[INFO]\033[0m Verifying extracted values exist in hardware-configuration.nix..."
 
 MISSING_VALUES=0
 check_value "$boot_uuid" "Boot UUID"

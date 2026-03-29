@@ -3,7 +3,6 @@
   pkgs,
   rust-overlay,
   dotacatFast,
-  nix-k0s
 }:
 let
   wrapped-portal = pkgs.writeShellScriptBin "xdg-desktop-portal-cosmic-wrapper" ''
@@ -42,7 +41,7 @@ in {
         clinfo
         cl-wordle
         cni-plugins
-        containerd
+        #containerd
         cosmic-applibrary
         cosmic-bg
         cosmic-comp
@@ -92,7 +91,7 @@ in {
         direnv
         distrobox
         doas
-        docker
+        #docker
         dosfstools
         dotacatFast.packages.${system}.default
         dust
@@ -144,7 +143,6 @@ in {
         jdk
         jq
         jqp
-        k0sctl
         kernel-hardening-checker
         kind
         kitty
@@ -179,7 +177,6 @@ in {
         nftables
         nixd
         nix-index
-        nix-k0s.packages.${system}.k0s
         nix-prefetch-git
         nodejs
         nvim-pkg

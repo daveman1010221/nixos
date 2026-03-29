@@ -12,85 +12,119 @@ in
       "tpm_tis_core"
     ];
 
-    # kernelPackages = pkgs.hardened_linux_kernel;
     kernelPackages = pkgs.linuxKernel.packages.linux_6_18;
 
-    initrd.availableKernelModules = lib.mkForce [
-      "nls_cp437"
-      "nls_iso8859_1"
-      "crypto_null"
-      "cryptd"
-      "cbc"
+    binfmt = {
+      emulatedSystems = [ "aarch64-linux" ];
+      preferStaticEmulators = true;
+      addEmulatedSystemsToNixSandbox = true;
+    };
 
-      # Keyboard stack (early boot / initrd)
-      "i8042"
-      "atkbd"
-      "serio_raw"
+    initrd = {
+      includeDefaultModules = false;  # Required for FIPS compliance — prevents
+                                      # unexpected driver loading in initrd.
 
-      # Crypto (initrd): AES isn’t “Intel-only” despite the name; AMD uses AES-NI too.
-      "aesni_intel"    # AES-NI acceleration module (name is historical; works on AMD too)
-      "gf128mul"
-      "dm_crypt"       # Device-mapper crypto (LUKS)
-      "essiv"          # ESSIV IV generator for block encryption modes
-      "authenc"        # Authenticated encryption transforms used by dm-crypt
-      "xts"            # XTS mode (common for disk encryption)
+      availableKernelModules = lib.mkForce [
+        "nls_cp437"
+        "nls_iso8859_1"
+        "crypto_null"
+        "cryptd"
+        "sha256"
+        "vmd"
+        "cbc"
 
-      # Filesystems
-      "ext4"           # Encrypted USB boot volume (GRUB still hates F2FS)
-      "crc16"
-      "mbcache"
-      "jbd2"
-      "f2fs"           # Root FS
-      "lz4_compress"
-      "lz4hc_compress"
-      "vfat"           # EFI system partition
-      "fat"
+        # Keyboard stack (early boot / initrd)
+        "i8042"
+        "atkbd"
+        "serio_raw"
 
-      # Storage
-      "nvme"
-      "nvme_core"
-      "nvme_auth"
-      "raid0"          # md raid0
-      "usb_storage"
-      "scsi_mod"
-      "scsi_common"
-      "libata"
-      "dm_mod"
-      "dm_snapshot"
-      "dm_bufio"
-      "dax"
-      "md_mod"
+        # Crypto (initrd): AES isn't "Intel-only" despite the name; AMD uses AES-NI too.
+        "aesni_intel"    # AES-NI acceleration module (name is historical; works on AMD too)
+        "gf128mul"
+        "dm_crypt"       # Device-mapper crypto (LUKS)
+        "essiv"          # ESSIV IV generator for block encryption modes
+        "authenc"        # Authenticated encryption transforms used by dm-crypt
+        "xts"            # XTS mode (common for disk encryption)
 
-      # Hardware support
-      "ahci"
-      "libahci"
-      "sd_mod"
-      "uas"
-      "usbcore"
-      "usbhid"
-      "hid_sensor_hub"
-      "hid_generic"
-      "xhci_hcd"
-      "xhci_pci"
-      "thunderbolt"
+        # Filesystems
+        "ext4"           # Encrypted USB boot volume (GRUB still hates F2FS)
+        "crc16"
+        "mbcache"
+        "jbd2"
+        "f2fs"           # Flash-friendly filesystem support -- the top-layer of our storage stack
+        "lz4_compress"
+        "lz4hc_compress"
+        "vfat"           # Windows FAT volumes, such as the FAT12 EFI partition
+        "fat"
+
+        # Storage
+        "nvme"           # NVME drive support
+        "nvme_core"
+        "nvme_auth"
+        "raid0"          # Software RAID0 via mdadm
+        "usb_storage"    # Generic USB storage support
+        "scsi_mod"
+        "scsi_common"
+        "libata"
+        "dm_mod"         # Device mapper infrastructure
+        "dm_snapshot"
+        "dm_bufio"
+        "dax"
+        "md_mod"
+
+        # Hardware support
+        "ahci"           # SATA disk support
+        "libahci"
+        "sd_mod"         # SCSI disk support (/dev/sdX)
+        "uas"            # USB attached SCSI (booting from USB)
+        "usbcore"        # USB support
+        "usbhid"
+        "i2c_hid"
+        "hid_multitouch"
+        "hid_sensor_hub"
+        "intel_ishtp_hid"
+        "hid_generic"
+        "xhci_hcd"       # USB 3.x support
+        "xhci_pci"       # USB 3.x support
+        "thunderbolt"
+      ];
+
+      luks = {
+        cryptoModules = [
+          "aesni_intel"    # AES-NI acceleration (AMD-compatible despite name)
+          "cbc"
+          "cryptd"
+          "crypto_null"
+          "essiv"
+          "gf128mul"
+          "sha256"
+          "xts"
+        ];
+        mitigateDMAAttacks = true;
+      };
+
+      services.lvm.enable = true;
+
+      supportedFilesystems = {
+        ext4 = true;
+        vfat = true;
+        f2fs = true;
+      };
+
+      systemd.enable = true;
+      systemd.emergencyAccess = true;
+    };
+
+    kernelModules = [
+      "kvm-amd"
+      "vxlan"          # Required for usernetes/rootless Kubernetes overlay networking
     ];
 
-    # Crypto primitives needed in initrd for unlocking volumes (LUKS + dm-crypt)
-    initrd.luks.cryptoModules = [
-      "aesni_intel"     # AES-NI acceleration (AMD-compatible despite name)
-      "cbc"
-      "cryptd"
-      "crypto_null"
-      "essiv"
-      "gf128mul"
-      "xts"
-    ];
-
-    kernelModules = [ "kvm-amd" ];
+    extraModulePackages = [ ];
 
     kernelParams = [
       "i8042.unlock"
-      #"lockdown=confidentiality"
+      "lockdown=confidentiality"
       "mitigations=auto"
       "pci=realloc"
       "seccomp=1"
@@ -107,13 +141,11 @@ in
 
     kernelPatches = [ ];
 
-    kernel = {
+    kernel.sysctl = {
       # Enable certain network operations inside rootless containers.
-      sysctl = {
-        "net.ipv4.ip_unprivileged_port_start" = 0;
-        "net.ipv4.ping_group_range" = "0 2147483647";
-        "kernel.unprivileged_userns_clone" = 1;
-      };
+      "net.ipv4.ip_unprivileged_port_start" = 0;
+      "net.ipv4.ping_group_range" = "0 2147483647";
+      "kernel.unprivileged_userns_clone" = 1;
     };
   };
 

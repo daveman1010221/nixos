@@ -25,8 +25,6 @@
     sed-key.url = "github:daveman1010221/sed-key";
 
     git-hooks.url = "github:daveman1010221/git-hooks";
-
-    nix-k0s.url = "github:daveman1010221/nix-k0s";
   };
 
   # The audit package needs an overlay to get the permissions right for
@@ -55,7 +53,7 @@
   #   });
   # })
 
-  outputs = { self, nixpkgs, rust-overlay, myNeovimOverlay, dotacatFast, secrets-empty, sed-key, git-hooks, nix-k0s }:
+  outputs = { self, nixpkgs, rust-overlay, myNeovimOverlay, dotacatFast, secrets-empty, sed-key, git-hooks }:
   let
     lib = nixpkgs.lib;
     system = "x86_64-linux";
@@ -221,7 +219,7 @@
 
         myPackages = import (hostDir + /packages.nix) {
           pkgs = pkgsForHost;
-          inherit rust-overlay dotacatFast nix-k0s system;
+          inherit rust-overlay dotacatFast system;
         };
 
         # read whatever the caller provided under the name `secrets-empty`
@@ -239,7 +237,6 @@
         };
         modules = commonModules ++ [
           (hostDir + /hardware-configuration.nix)        # or hardware-configuration.nix
-          (hostDir + /hardware.nix)        # or hardware-configuration.nix
 
           ({ config, lib, pkgs, ... }: let
 
@@ -374,6 +371,7 @@
                 checkRuleset = true;
                 enable = true;
                 flushRuleset = true;
+
                 ruleset = builtins.readFile firewallFile;
               };
               useDHCP = lib.mkDefault true;
@@ -663,6 +661,9 @@
             };
 
             systemd = {
+              services = {
+                "user@".serviceConfig.Delegate = "cpu cpuset io memory pids";
+              };
               tpm2.enable = false;
               # Override the auditd systemd service, so that we can actually configured
               # the daemon.
@@ -691,12 +692,13 @@
                 ExecStartPost = lib.mkAfter ''${pkgs.bash}/bin/bash -c "for n in $(docker ps -aq); do docker update --restart=no $n || true; done;"'';
               };
             };
-	    systemd.services.wpa_supplicant.serviceConfig = {
-	      PrivateMounts = lib.mkForce false;
-	      PrivateTmp = lib.mkForce false;
-	      ProtectSystem = lib.mkForce "no";
-	      ProtectHome = lib.mkForce false;
-	    };
+
+	        systemd.services.wpa_supplicant.serviceConfig = {
+	          PrivateMounts = lib.mkForce false;
+	          PrivateTmp = lib.mkForce false;
+	          ProtectSystem = lib.mkForce "no";
+	          ProtectHome = lib.mkForce false;
+	        };
 
             swapDevices = [
               {
@@ -734,6 +736,7 @@
               # 'mkpasswd'
               hashedPassword = ''$y$j9T$TsZjcgKr0u3TvD1.0de.W/$c/utzJh2Mkg.B38JKR7f3rQprgZ.RwNvUaoGfE/OD8D'';
               extraGroups = [ "wheel" "mlocate" "docker" "systemd-journal" "libvirtd" "kvm" "video" "render" ]; # Enable ‘sudo’ for the user.
+              linger = true;
               shell = pkgs.fish;
               subUidRanges = [
                 {
@@ -751,20 +754,26 @@
 
             users.groups.mlocate = {};
 
+            # virtualisation = {
+            #   containerd.enable = true;
+            #   libvirtd.enable = true;
+            #   podman = {
+            #     enable = true;
+            #   };
+            #   docker = {
+            #     enable = true;
+            #     daemon.settings = {
+            #         exec-opts = [ "native.cgroupdriver=cgroupfs" ];
+            #         iptables = false;
+            #         ip-forward = true;
+            #         live-restore = false;
+            #     };
+            #   };
+            # };
             virtualisation = {
-              containerd.enable = true;
               libvirtd.enable = true;
               podman = {
                 enable = true;
-              };
-              docker = {
-                enable = true;
-                daemon.settings = {
-                    exec-opts = [ "native.cgroupdriver=cgroupfs" ];
-                    iptables = false;
-                    ip-forward = true;
-                    live-restore = false;
-                };
               };
             };
 

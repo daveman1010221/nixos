@@ -38,6 +38,7 @@ table ip mytable {
 
         # Allow access to Kubernetes API server (default port 6443)
         tcp dport 6443 accept
+        tcp dport { 2379, 2380 } accept  # etcd
 
         # (Optional) Allow CoreDNS (UDP/TCP on 53) from cluster-internal IPs
         ip saddr 10.244.0.0/16 udp dport 53 accept
@@ -81,7 +82,7 @@ table ip mytable {
         tcp dport { 80, 443 } accept
 
         # Allow API server access from tools running locally
-        ip daddr 127.0.0.1 tcp dport 6443 accept
+        ip daddr 127.0.0.1 tcp dport { 2379, 2380, 6443, 10250 } accept
 
         # Allow kubelet and other cluster components to talk internally
         ip daddr 172.18.0.0/16 accept
@@ -117,6 +118,8 @@ table ip mytable {
         # This is not the ideal solution, coredns probably
         # should do its own external resolves. TODO
         ip saddr 172.18.0.0/16 ip daddr 192.168.1.1 udp dport 53 accept
+        ip saddr 10.244.0.0/16 accept
+        ip daddr 10.244.0.0/16 accept
 
         tcp dport @inbound_whitelist iifname "docker0" oifname != "docker0" accept
         tcp dport @inbound_whitelist iifname != "docker0" oifname "docker0" accept
@@ -181,14 +184,14 @@ table ip mytable {
 table ip6 filter {
     chain input {
         type filter hook input priority filter; policy drop;
+        iif "lo" accept
         ip6 daddr ::/0 drop
     }
-
     chain output {
         type filter hook output priority filter; policy drop;
+        oif "lo" accept
         ip6 saddr ::/0 drop
     }
-
     chain forward {
         type filter hook forward priority filter; policy drop;
         ip6 daddr ::/0 drop
