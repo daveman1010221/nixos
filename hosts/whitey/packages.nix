@@ -179,6 +179,23 @@ in {
         nix-index
         nix-prefetch-git
         nodejs
+        nushell
+        
+        # If they're commented out, they're broken.
+        nushellPlugins.gstat
+        nushellPlugins.query
+        nushellPlugins.formats
+        #nushellPlugins.net
+        nushellPlugins.skim
+        #nushellPlugins.dbus
+        #nushellPlugins.units
+        nushellPlugins.semver
+        nushellPlugins.polars
+        #nushellPlugins.highlight
+
+        nufmt
+        http-nu
+        nu-lint
         nvim-pkg
         nvme-cli
         nvtopPackages.amd

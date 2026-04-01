@@ -338,6 +338,10 @@
                   );
                 }
                 {
+                  "nushell/env.nu".text = builtins.readFile ./shell/nushell/env.nu;
+                  "nushell/config.nu".text = builtins.readFile ./shell/nushell/config.nu;
+                }
+                {
                   "containers/containers.conf".text = lib.mkForce ''
                     [engine]
                     runtime = "runc"
