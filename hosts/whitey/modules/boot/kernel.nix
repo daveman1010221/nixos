@@ -12,7 +12,8 @@ in
       "tpm_tis_core"
     ];
 
-    kernelPackages = pkgs.linuxKernel.packages.linux_6_18;
+    #kernelPackages = pkgs.linuxKernel.packages.linux_6_18;
+    kernelPackages = pkgs.hardened_linux_kernel;
 
     binfmt = {
       emulatedSystems = [ "aarch64-linux" ];

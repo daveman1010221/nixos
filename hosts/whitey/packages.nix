@@ -97,7 +97,6 @@ in {
         dust
         e2fsprogs
         efibootmgr
-        efitools
         efivar
         ente-desktop
         esbuild
@@ -253,7 +252,6 @@ in {
         wl-clipboard-rs
         wordbook
         xbindkeys
-        xbindkeys-config
         xdg-desktop-portal-cosmic
         yaru-theme
         zed-editor

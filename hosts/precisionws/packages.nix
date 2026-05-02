@@ -233,7 +233,6 @@ in {
         wl-clipboard-rs
         wordbook
         xbindkeys
-        xbindkeys-config
         xdg-desktop-portal-cosmic
         yaru-theme
         zed-editor

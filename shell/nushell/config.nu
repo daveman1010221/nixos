@@ -58,9 +58,9 @@ $env.config.color_config = {
 # Aliases - simple command calls only
 alias lh = eza --group --header --group-directories-first --long --icons --git --all --binary --dereference --links
 
-plugin add /run/current-system/sw/bin/nu_plugin_gstat
-plugin add /run/current-system/sw/bin/nu_plugin_query
-plugin add /run/current-system/sw/bin/nu_plugin_formats
-plugin add /run/current-system/sw/bin/nu_plugin_skim
-plugin add /run/current-system/sw/bin/nu_plugin_semver
-plugin add /run/current-system/sw/bin/nu_plugin_polars
+plugin add nu_plugin_gstat
+plugin add nu_plugin_query
+plugin add nu_plugin_formats
+plugin add nu_plugin_skim
+plugin add nu_plugin_semver
+plugin add nu_plugin_polars
