@@ -1,11 +1,17 @@
 { pkgs, lib, config, ... }:
-let
-  _ = assert pkgs ? hardened_linux_kernel;
-      true;
-in
+# let
+  # _ = assert pkgs ? hardened_linux_kernel;
+      # true;
+# in
 {
   boot = {
-    kernelPackages = pkgs.hardened_linux_kernel;
+    # blacklistedKernelModules = [
+    #   "encrypted_keys"
+    #   "trusted"
+    # ];
+
+    # kernelPackages = pkgs.hardened_linux_kernel;
+    kernelPackages = pkgs.linuxPackages_latest;
 
     binfmt = {
       emulatedSystems = [ "aarch64-linux" ];
@@ -18,6 +24,13 @@ in
                                       # unexpected driver loading in initrd.
 
       availableKernelModules = lib.mkForce [
+        # 7.1 bullshit changes:
+        "aes"
+        "aesni-intel"
+        "dm-crypt"
+        "dm-mod"
+
+
         "nls_cp437"
         "nls_iso8859_1"
         "cryptd"
@@ -30,9 +43,7 @@ in
         "serio_raw"
 
         # Crypto (initrd): AES isn't "Intel-only" despite the name; AMD uses AES-NI too.
-        "aesni_intel"    # AES-NI acceleration module (name is historical; works on AMD too)
         "gf128mul"
-        "dm_crypt"       # Device-mapper crypto (LUKS)
         "essiv"          # ESSIV IV generator for block encryption modes
         "authenc"        # Authenticated encryption transforms used by dm-crypt
         "xts"            # XTS mode (common for disk encryption)
@@ -57,9 +68,6 @@ in
         "scsi_mod"
         "scsi_common"
         "libata"
-        "dm_mod"         # Device mapper infrastructure
-        "dm_snapshot"
-        "dm_bufio"
         "dax"
         "md_mod"
 
@@ -83,7 +91,7 @@ in
 
       luks = {
         cryptoModules = [
-          "aesni_intel"    # AES-NI acceleration (AMD-compatible despite name)
+          "aesni-intel"
           "cbc"
           "cryptd"
           "crypto_null"
@@ -93,8 +101,6 @@ in
         ];
         mitigateDMAAttacks = true;
       };
-
-      services.lvm.enable = true;
 
       supportedFilesystems = {
         ext4 = true;

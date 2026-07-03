@@ -70,9 +70,12 @@ BLOCK_01="nvme0n1"
 BLOCK_02="nvme1n1"
 DEV_BLOCKS=("${BLOCK_01}" "${BLOCK_02}")
 BOOT_MOUNT="/mnt/boot"
+SECRETS_MOUNT="/mnt/secrets"
 EFI_PARTITION="${DEFAULT_BOOT}1"
 BOOT_PARTITION="${DEFAULT_BOOT}2"
-KEYS_DIR="${BOOT_MOUNT}/keys"
+SECRETS_PARTITION="${DEFAULT_BOOT}3"
+# keys live on the encrypted /secrets partition, not /boot
+KEYS_DIR="${SECRETS_MOUNT}/keys"
 NIXOS_REPO="https://github.com/daveman1010221/nixos.git"
 
 ### PRE-FLIGHT CHECKS
@@ -97,7 +100,7 @@ echo -e "\033[1;34m[INFO]\033[0m Ensuring all partitions, RAID, and LUKS devices
 echo -e "\033[1;34m[INFO]\033[0m Turning off swap (if active)..."
 swapoff -a || true
 
-# 2) Unmount everything under /mnt (including nested mounts like /mnt/boot, /mnt/boot/EFI, etc.)
+# 2) Unmount everything under /mnt (including nested mounts like /mnt/boot, /mnt/boot/EFI, /mnt/secrets, etc.)
 echo -e "\033[1;34m[INFO]\033[0m Unmounting all filesystems from /mnt..."
 if mount | grep -q "/mnt/"; then
     umount -R /mnt || {
@@ -106,12 +109,15 @@ if mount | grep -q "/mnt/"; then
     }
 fi
 
-# If your script sometimes mounts /mnt/boot or /mnt/boot/EFI separately, unmount them, too:
+# If your script sometimes mounts /mnt/boot, /mnt/boot/EFI, or /mnt/secrets separately, unmount them, too:
 if mount | grep -q "/mnt/boot/EFI"; then
     umount /mnt/boot/EFI || umount -l /mnt/boot/EFI || true
 fi
 if mount | grep -q "/mnt/boot "; then
     umount /mnt/boot || umount -l /mnt/boot || true
+fi
+if mount | grep -q "/mnt/secrets"; then
+    umount /mnt/secrets || umount -l /mnt/secrets || true
 fi
 
 # 3) Remove LVM logical volumes and the volume group
@@ -135,7 +141,7 @@ mdadm --stop --scan || true
 for array in $(ls /dev/md* 2>/dev/null || true); do
     mdadm --stop "$array"   2>/dev/null || true
     mdadm --remove "$array" 2>/dev/null || true
-    # Also zero superblock if it’s still recognized as an MD device
+    # Also zero superblock if it's still recognized as an MD device
     mdadm --zero-superblock "$array" 2>/dev/null || true
     wipefs -a "$array"      2>/dev/null || true
 done
@@ -179,6 +185,7 @@ parted -s ${DEFAULT_BOOT} mklabel gpt
 parted -s ${DEFAULT_BOOT} mkpart ESP fat32 1MiB 551MiB
 parted -s ${DEFAULT_BOOT} set 1 esp on
 parted -s ${DEFAULT_BOOT} mkpart BOOT ext4 551MiB 2599MiB
+parted -s ${DEFAULT_BOOT} mkpart SECRETS ext4 2599MiB 2855MiB
 
 ### FORMATTING EFI ###
 echo -e "\033[1;34m[INFO]\033[0m Formatting EFI partition..."
@@ -196,6 +203,19 @@ mkdir -p ${BOOT_MOUNT}
 mount /dev/mapper/boot_crypt ${BOOT_MOUNT}
 mkdir -p ${BOOT_MOUNT}/EFI
 mount ${EFI_PARTITION} ${BOOT_MOUNT}/EFI
+
+### ENCRYPTING /SECRETS ###
+# /secrets is a small, separately-encrypted partition holding only the NVMe
+# LUKS detached headers/keyfiles. It is unlocked briefly during boot to
+# stage those keys into tmpfs, then immediately re-locked — unlike /boot,
+# which stays open and mounted for the whole session. This minimizes the
+# window during which the NVMe key material is exposed.
+echo -e "\033[1;34m[INFO]\033[0m Encrypting /secrets (You will be prompted for a passphrase)..."
+cryptsetup luksFormat --type luks2 --cipher aes-xts-plain64 --key-size 512 --hash sha256 ${SECRETS_PARTITION}
+cryptsetup luksOpen ${SECRETS_PARTITION} secrets_crypt
+mkfs.ext4 /dev/mapper/secrets_crypt
+mkdir -p ${SECRETS_MOUNT}
+mount /dev/mapper/secrets_crypt ${SECRETS_MOUNT}
 
 ### PREPARING KEYS ###
 echo -e "\033[1;34m[INFO]\033[0m Generating LUKS headers and keys..."
@@ -266,10 +286,12 @@ echo -e "\033[1;34m[INFO]\033[0m Configuring Swap..."
 mkswap /dev/nix/swap
 swapon /dev/nix/swap
 
-# 6.5 Unmount Boot and EFI (First step)
-echo -e "\033[1;34m[INFO]\033[0m Unmounting Boot and EFI..."
+# 6.5 Unmount Boot, EFI, and Secrets (First step)
+echo -e "\033[1;34m[INFO]\033[0m Unmounting Boot, EFI, and Secrets..."
 umount ${BOOT_MOUNT}/EFI || true
 umount ${BOOT_MOUNT} || true
+umount ${SECRETS_MOUNT} || true
+cryptsetup luksClose secrets_crypt || true
 
 # 7️⃣  Mount Logical Volumes
 echo -e "\033[1;34m[INFO]\033[0m Mounting Logical Volumes..."
@@ -278,10 +300,13 @@ mkdir -p /mnt/tmp  && mount /dev/nix/tmp  /mnt/tmp
 mkdir -p /mnt/var  && mount /dev/nix/var  /mnt/var
 mkdir -p /mnt/home && mount /dev/nix/home /mnt/home
 
-# 8️⃣  Remount Boot and EFI
-echo -e "\033[1;34m[INFO]\033[0m Remounting Boot and EFI..."
+# 8️⃣  Remount Boot, EFI, and Secrets
+echo -e "\033[1;34m[INFO]\033[0m Remounting Boot, EFI, and Secrets..."
 mkdir -p ${BOOT_MOUNT} && mount /dev/mapper/boot_crypt ${BOOT_MOUNT}
 mkdir -p ${BOOT_MOUNT}/EFI && mount ${EFI_PARTITION} ${BOOT_MOUNT}/EFI
+mkdir -p ${SECRETS_MOUNT}
+cryptsetup luksOpen ${SECRETS_PARTITION} secrets_crypt
+mount /dev/mapper/secrets_crypt ${SECRETS_MOUNT}
 
 echo -e "\033[1;34m[INFO]\033[0m Verifying that all devices and filesystems are correctly set up..."
 
@@ -411,13 +436,27 @@ nvme1_path="$(
 )"
 
 if [[ -z "$nvme0_path" || -z "$nvme1_path" ]]; then
-    # Fall back to raw nodes if by-id symlinks aren’t present
+    # Fall back to raw nodes if by-id symlinks aren't present
     : "${nvme0_path:=/dev/nvme0n1}"
     : "${nvme1_path:=/dev/nvme1n1}"
 fi
 if [[ ! -e "$nvme0_path" || ! -e "$nvme1_path" ]]; then
     echo -e "\033[1;31m[ERROR]\033[0m Failed to determine NVMe device paths!"
     echo "Check your system's device list manually and update flake.nix as needed."
+    exit 1
+fi
+
+# Persistent by-id path for the /secrets partition
+secrets_path="$(
+  for f in /dev/disk/by-id/*; do
+    [[ -e "$f" ]] || continue
+    [[ "$(readlink -f "$f")" == "$SECRETS_PARTITION" ]] && { echo "$f"; break; }
+  done
+)"
+
+if [[ -z "$secrets_path" ]]; then
+    echo -e "\033[1;31m[ERROR]\033[0m Failed to determine /secrets partition by-id path!"
+    echo "Check your system's device list manually and update flakey.json as needed."
     exit 1
 fi
 
@@ -444,6 +483,7 @@ do_or_echo tee "${BOOT_MOUNT}/secrets/flakey.json" >/dev/null <<EOF
 {
   "PLACEHOLDER_NVME0": "${nvme0_path}",
   "PLACEHOLDER_NVME1": "${nvme1_path}",
+  "PLACEHOLDER_SECRETS": "${secrets_path}",
 
   "PLACEHOLDER_BOOT_UUID": "/dev/disk/by-uuid/${boot_uuid}",
   "PLACEHOLDER_BOOT_FS_UUID": "/dev/disk/by-uuid/${boot_fs_uuid}",
@@ -469,9 +509,12 @@ nixos-install \
   --flake /mnt/etc/nixos#${HOSTNAME} \
   --override-input secrets-empty path:${BOOT_MOUNT}/secrets/flakey.json
 
-#do_or_echo umount ${SECRETS_MOUNT}
-#do_or_echo cryptsetup luksClose secrets_crypt
-#do_or_echo umount "${BOOT_MOUNT}/EFI"
-#do_or_echo umount "${BOOT_MOUNT}"
+# /secrets should end the install fully closed — it only ever needs to be
+# open long enough for the initrd to stage NVMe keys during boot.
+umount ${SECRETS_MOUNT} || true
+cryptsetup luksClose secrets_crypt || true
+umount "${BOOT_MOUNT}/EFI" || true
+umount "${BOOT_MOUNT}" || true
+cryptsetup luksClose boot_crypt || true
 
 echo -e "\033[1;32m[SUCCESS]\033[0m Installation complete! Reboot when ready."

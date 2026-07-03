@@ -75,7 +75,6 @@ in {
         cri-o
         cryptsetup
         cups
-        deja-dup
         delta
         dhall
         dhall-bash
@@ -198,6 +197,8 @@ in {
         podman-desktop
         psmisc
         pwgen
+        restic
+        restic-browser
         ripgrep
         ripgrep-all
         rootlesskit

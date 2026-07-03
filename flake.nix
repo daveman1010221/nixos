@@ -213,8 +213,8 @@
 
 	pkgsForHost = pkgsFor hostOverlays system;
 
-        _ = lib.assertMsg (pkgsForHost ? hardened_linux_kernel)
-          "precisionws: hardened_linux_kernel missing from pkgsForHost. Either custom-kernel overlay not loaded or not an overlay.";
+        # _ = lib.assertMsg (pkgsForHost ? hardened_linux_kernel)
+          # "precisionws: hardened_linux_kernel missing from pkgsForHost. Either custom-kernel overlay not loaded or not an overlay.";
 
 
         myPackages = import (hostDir + /packages.nix) {
