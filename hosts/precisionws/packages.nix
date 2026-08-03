@@ -235,7 +235,6 @@ in {
         wordbook
         xbindkeys
         xdg-desktop-portal-cosmic
-        yaru-theme
         zed-editor
         zellij
         zoom-us
