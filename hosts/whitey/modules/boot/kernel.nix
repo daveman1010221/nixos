@@ -1,8 +1,8 @@
 { pkgs, lib, ... }:
-let
-  _ = assert pkgs ? hardened_linux_kernel;
-      true;
-in
+# let
+  # _ = assert pkgs ? hardened_linux_kernel;
+      # true;
+# in
 {
   boot = {
     blacklistedKernelModules = [
@@ -13,7 +13,7 @@ in
     ];
 
     #kernelPackages = pkgs.linuxKernel.packages.linux_6_18;
-    kernelPackages = pkgs.hardened_linux_kernel;
+    kernelPackages = pkgs.linuxPackages_latest;
 
     binfmt = {
       emulatedSystems = [ "aarch64-linux" ];
