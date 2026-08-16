@@ -1759,7 +1759,7 @@ lsblk -o NAME,MODEL,SIZE,TYPE,MOUNTPOINT
 # Filter out nvme, and loop devices to avoid picking them accidentally
 DEFAULT_BOOT=$(
   lsblk -dno NAME,TYPE,SIZE,TRAN \
-  | awk '$2=="disk" && $4!="nvme"{print "/dev/"$1, $3}' \
+  | awk '$2=="disk" && $4!="nvme" && $3!="0B"{print "/dev/"$1, $3}' \
   | sort -h -k2 \
   | head -n1 \
   | awk '{print $1}'
