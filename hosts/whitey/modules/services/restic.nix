@@ -1,8 +1,8 @@
 {
   services.resticUsbBackup = {
     enable = true;
-    mountPoint = "/run/media/djshepard/BD7D-8A76";
-    repoSubdir = "precisionws";
+    mountPoint = "/run/media/djshepard/Backups-New";
+    repoSubdir = "whitey";
     user = "djshepard";
     insecureNoPassword = true;
   };

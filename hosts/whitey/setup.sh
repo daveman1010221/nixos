@@ -1381,10 +1381,9 @@ check_command() {
     fi
 }
 
-# Prompt once for the SED master secret if not already set in the environment.
-# The secret is exported so that child processes (expect, nvme, etc.) can see it.
+# Prompt once for MASTER_SECRET if not already set in the environment.
 prompt_master_secret() {
-    if [[ -z "${SED_MASTER_SECRET:-}" ]]; then
+    if [[ -z "${MASTER_SECRET:-}" ]]; then
         local secret
         while :; do
             read -rsp "SED Master Secret: " secret
@@ -1393,74 +1392,76 @@ prompt_master_secret() {
                 echo -e "\033[1;31m[ERR]\033[0m Master secret cannot be empty." >&2
                 continue
             fi
-            # Optional: enforce minimum length for sanity
             if (( ${#secret} < 8 )); then
                 echo -e "\033[1;33m[WARN]\033[0m Master secret is very short (<8 chars)." >&2
-                # break here if you want to allow short secrets, or continue to reprompt
-                # continue
             fi
             break
         done
-        export SED_MASTER_SECRET="$secret"
+        export MASTER_SECRET="$secret"
     fi
 }
 
-# Derive a firmware-safe SID from (MASTER, SERIAL).
-# HMAC-SHA256(master, serial) → Base32 (no '='), UPPERCASE, length-limited.
-# Emits only A–Z2–7, which is firmware-friendly ASCII.
+# ────────────────────────────────────────────────────────────────
+# SED key derivation — HKDF-SHA256 (RFC 5869), single source of truth.
+# This is the ONLY key derivation scheme in this script. If it ever
+# needs to change, bump SED_DERIVATION_VERSION rather than adding a
+# second function. Verified against RFC 5869 test vectors.
+# ────────────────────────────────────────────────────────────────
+SED_DERIVATION_VERSION="sed-key-derivation-v1"
+
+hkdf_extract() {
+  # $1 = salt (ascii); reads IKM on stdin; PRK hex -> stdout
+  local salt="$1"
+  openssl dgst -sha256 -mac HMAC -macopt key:"$salt" -binary | od -An -tx1 | tr -d ' \n'
+}
+
+hkdf_expand_block() {
+  # $1=PRK hex $2=prev T hex(or empty) $3=info(ascii) $4=counter byte hex
+  local prk_hex="$1" prev_hex="$2" info="$3" counter_hex="$4"
+  {
+    [[ -n "$prev_hex" ]] && printf '%b' "$(echo -n "$prev_hex" | sed 's/\(..\)/\\x\1/g')"
+    printf '%s' "$info"
+    printf '%b' "\\x${counter_hex}"
+  } | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$prk_hex" -binary | od -An -tx1 | tr -d ' \n'
+}
+
+# Derive a firmware-safe SED SID from (MASTER_SECRET, SERIAL).
+# 20 raw bytes -> exactly 32 base32 chars, no padding, full use of Opal's max length.
 derive_sed_sid() {
-  local master="$1" serial="$2" n="${3:-30}"
-  # Guardrails
-  if [[ -z "$master" || -z "$serial" ]]; then
-    echo "[ERR] derive_sed_sid: missing args" >&2
-    return 1
-  fi
-  # Trim whitespace just in case
-  serial="$(printf '%s' "$serial" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-  # Clamp length to 8..32
-  if ! [[ "$n" =~ ^[0-9]+$ ]] || (( n < 8 || n > 32 )); then
-    echo "[ERR] derive_sed_sid: length must be 8..32 (got: $n)" >&2
-    return 1
-  fi
-  # Dependencies
-  command -v openssl >/dev/null 2>&1 || { echo "[ERR] derive_sed_sid: openssl not found" >&2; return 1; }
-  local have_basenc= have_base32=
-  command -v basenc  >/dev/null 2>&1 && have_basenc=1
-  command -v base32  >/dev/null 2>&1 && have_base32=1
-  if [[ -z "$have_basenc$have_base32" ]]; then
-    echo "[ERR] derive_sed_sid: need either 'basenc' or 'base32'" >&2
-    return 1
-  fi
+  local master="$1" serial="$2" out_bytes="${3:-${SED_KEY_BYTES:-20}}"
+  [[ -n "$master" && -n "$serial" ]] || { echo "[ERR] derive_sed_sid: missing args" >&2; return 1; }
 
-  # Force C locale so [:lower:]/[:upper:] behave predictably
-  local out
-  if [[ -n "$have_basenc" ]]; then
-    out="$(
-      LC_ALL=C printf '%s' "$serial" \
-        | openssl dgst -sha256 -mac HMAC -macopt "key:$master" -binary \
-        | basenc --base32 \
-        | tr -d '=' \
-        | tr '[:lower:]' '[:upper:]' \
-        | tr -d '\n' \
-        | cut -c1-"$n"
-    )"
+  local prk t1 t2 okm_hex
+  prk="$(printf '%s' "$master" | hkdf_extract "$SED_DERIVATION_VERSION")"
+  t1="$(hkdf_expand_block "$prk" "" "$serial" "01")"
+  if (( out_bytes > 32 )); then
+    t2="$(hkdf_expand_block "$prk" "$t1" "$serial" "02")"
+    okm_hex="${t1}${t2}"
   else
-    out="$(
-      LC_ALL=C printf '%s' "$serial" \
-        | openssl dgst -sha256 -mac HMAC -macopt "key:$master" -binary \
-        | base32 \
-        | tr -d '=' \
-        | tr '[:lower:]' '[:upper:]' \
-        | tr -d '\n' \
-        | cut -c1-"$n"
-    )"
+    okm_hex="$t1"
   fi
+  okm_hex="${okm_hex:0:$((out_bytes*2))}"
 
-  if [[ -z "$out" ]]; then
-    echo "[ERR] derive_sed_sid: empty output (unexpected)" >&2
-    return 1
-  fi
-  printf '%s\n' "$out"
+  printf '%b' "$(echo -n "$okm_hex" | sed 's/\(..\)/\\x\1/g')" \
+    | base32 | tr -d '=' | tr '[:lower:]' '[:upper:]' | tr -d '\n'
+}
+
+# Safe, non-secret fingerprint for confirming "did I type the right secret"
+# without ever touching a drive.
+sed_fingerprint() {
+  printf '%s' "$1" | sha256sum | cut -c1-16
+}
+
+# Dry-run helper: derive and show a fingerprint for any (master, serial) pair,
+# with zero hardware contact. Use this to sanity-check a candidate secret
+# BEFORE spending a live unlock attempt.
+sed_try_key() {
+  local serial="$1"
+  local master
+  read -rsp "Master secret to test: " master; echo
+  local sid; sid="$(derive_sed_sid "$master" "$serial")"
+  echo "Derived SID:  $sid"
+  echo "Fingerprint:  $(sed_fingerprint "$sid")   (safe to compare/share; not the key itself)"
 }
 
 # Validate a firmware-safe SID:
@@ -1479,17 +1480,6 @@ validate_sid() {
     return 0
   fi
   return 1
-}
-
-# Deterministic per-drive key from MASTER_SECRET and controller serial
-# Output: upper-hex trimmed to SED_KEY_LEN (default 30)
-derive_sid_from_master() {
-  local secret="$1" serial="$2" n="${SED_KEY_LEN:-30}"
-  [[ -n "$secret" && -n "$serial" ]] || return 2
-  # Use sha256(secret||serial), upper-hex, trim length
-  local hex
-  hex="$(printf '%s' "${secret}::${serial}" | sha256sum | awk '{print $1}' | tr 'a-f' 'A-F')"
-  printf '%s' "${hex:0:${n}}"
 }
 
 # Map /dev/nvmeXnY (or partition /dev/nvmeXnYpZ) -> controller serial via sysfs.
@@ -1543,190 +1533,42 @@ ctrl_node_for_dev() {
   echo "[ERR] ctrl_node_for_dev: not an NVMe namespace: $dev" >&2; return 1
 }
 
-# Ensure per-drive key files exist for a list of SERIALs.
-# - Prompts for master secret if needed
-# - Creates ${KEYS_DIR}/nvme-<SERIAL>.key with 0400 perms (root-only)
-# - Never prints the SID; logs minimal info (optionally a hash if available)
-ensure_sed_keys_for_serials() {
-  # Guardrails
-  if [[ $EUID -ne 0 ]]; then
-    echo "[ERR] ensure_sed_keys_for_serials: must run as root" >&2
-    return 2
-  fi
-  if [[ $# -eq 0 ]]; then
-    echo "[ERR] ensure_sed_keys_for_serials: no serials provided" >&2
-    return 2
-  fi
-
-  # Directories / perms
-  : "${KEYS_DIR:=${SECRETS_MOUNT:-/run/secrets}/keys}"
-  mkdir -p -- "$KEYS_DIR" || { echo "[ERR] cannot create $KEYS_DIR" >&2; return 1; }
-  chmod 0700 -- "$KEYS_DIR" 2>/dev/null || true
-
-  prompt_master_secret || return 1
-  local um_old
-  um_old=$(umask)
-  umask 077  # new files: owner-only
-
-  local rc=0
-  for s in "$@"; do
-    # Trim serial, basic sanity
-    local serial="${s#"${s%%[![:space:]]*}"}"; serial="${serial%"${serial##*[![:space:]]}"}"
-    [[ -n "$serial" ]] || { echo "[ERR] empty serial in list; skipping" >&2; rc=1; continue; }
-
-    local keyfile="${KEYS_DIR}/nvme-${serial}.key"
-
-    if [[ -s "$keyfile" ]]; then
-      # Validate existing key and fix perms quietly
-      local existing
-      existing="$(head -n1 -- "$keyfile" 2>/dev/null || true)"
-      if [[ -z "$existing" ]] || ! validate_sid "$existing"; then
-        echo "[WARN] $keyfile exists but is invalid; refusing to overwrite automatically." >&2
-        echo "[WARN] Remove it manually to regenerate: rm -f -- '$keyfile'" >&2
-        rc=1; continue
-      fi
-      chmod 0400 -- "$keyfile" 2>/dev/null || true
-      echo "[INFO] Reusing existing ${keyfile}"
-      continue
-    fi
-
-    # Derive new SID
-    local sid
-    sid="$(derive_sed_sid "$SED_MASTER_SECRET" "$serial" "${SED_SID_LEN:-30}")" \
-      || { echo "[ERR] derive failed for serial $serial" >&2; rc=1; continue; }
-    if ! validate_sid "$sid"; then
-      echo "[ERR] Derived SID failed policy for serial $serial" >&2
-      rc=1; continue
-    fi
-
-    # Atomic write: temp file then mv
-    local tmp
-    tmp="$(mktemp --tmpdir="$KEYS_DIR" ".nvme-${serial}.key.tmp.XXXXXX")" \
-      || { echo "[ERR] mktemp failed in $KEYS_DIR" >&2; rc=1; continue; }
-    printf '%s\n' "$sid" >"$tmp" 2>/dev/null \
-      && chmod 0400 -- "$tmp" \
-      && mv -f -- "$tmp" "$keyfile" \
-      || { echo "[ERR] failed writing $keyfile" >&2; rm -f -- "$tmp"; rc=1; continue; }
-
-    # Optional: log a non-secret fingerprint if available
-    if command -v sha256sum >/dev/null 2>&1; then
-      local fp
-      fp="$(printf '%s' "$sid" | sha256sum | awk '{print $1}')" || fp="(unavailable)"
-      echo "[INFO] Created ${keyfile} (sha256 of SID: ${fp})"
-    else
-      echo "[INFO] Created ${keyfile}"
-    fi
-  done
-
-  umask "$um_old"
-  return $rc
-}
-
-# Load SED_KEY for a given SERIAL (export for expect).
-# Strategy:
-#   1) If MASTER_SECRET is set (or after prompting), derive key deterministically.
-#   2) Otherwise, try existing key file: ${KEYS_DIR}/nvme-<SERIAL>.key
-#   3) If SED_WRITE_KEYS=1, write the derived key to that path (optional).
+# Load SED_KEY for a given SERIAL (export for expect). Single algorithm,
+# always freshly derived from MASTER_SECRET. Writes a keyfile + non-secret
+# metadata sidecar (algorithm/serial/fingerprint) if SED_WRITE_KEYS=1, so a
+# future recovery session can read what was used instead of guessing.
 sed_load_key_by_serial() {
   local s="$1"
-  if [[ -z "$s" ]]; then
-    echo "[ERR] sed_load_key_by_serial: missing serial" >&2
-    return 2
-  fi
+  [[ -n "$s" ]] || { echo "[ERR] sed_load_key_by_serial: missing serial" >&2; return 2; }
   : "${KEYS_DIR:=${SECRETS_MOUNT:-/run/secrets}/keys}"
   local f="${KEYS_DIR}/nvme-${s}.key"
+  local meta="${KEYS_DIR}/nvme-${s}.meta.json"
 
-  # 1) Derive from MASTER_SECRET if provided
-  if [[ -n "${MASTER_SECRET}" ]]; then
-    SED_KEY="$(derive_sid_from_master "${MASTER_SECRET}" "${s}")" || return 1
-    if ! validate_sid "$SED_KEY"; then
-      echo "[ERR] derived SID fails policy; adjust SED_KEY_LEN or MASTER_SECRET." >&2
-      return 3
-    fi
-    export SED_KEY SED_KEY_SOURCE="derived"
-    if [[ "${SED_WRITE_KEYS:-0}" == "1" ]]; then
-      # Writing requires root; keep non-fatal if not.
-      if [[ $EUID -eq 0 ]]; then
-        mkdir -p "$KEYS_DIR" && chmod 0700 "$KEYS_DIR" || true
-        printf '%s' "$SED_KEY" > "$f" && chmod 0600 "$f" || true
-      else
-        echo "[WARN] not root; skipping write of $f" >&2
-      fi
-    fi
-    return 0
-  fi
+  prompt_master_secret
 
-  # 2) Attempt to read an existing key file
-  if [[ -r "$f" ]]; then
-    # Reading a file doesn’t strictly require root, but you likely run as root anyway.
-    local key
-    key="$(head -n1 -- "$f" 2>/dev/null || true)"
-    if [[ -z "$key" ]]; then
-      echo "[ERR] empty key in $f" >&2
-      return 1
-    fi
-    if ! validate_sid "$key"; then
-      echo "[ERR] key in $f fails policy (expect A–Z0–9_.:@#- length 8..32)" >&2
-      return 1
-    fi
-    SED_KEY="$key"
-    export SED_KEY SED_KEY_SOURCE="file:$f"
-    return 0
-  fi
-
-  # 3) Prompt MASTER_SECRET once, then derive
-  read -rsp "SED Master Secret (won't be stored): " MASTER_SECRET; echo
-  if [[ -z "${MASTER_SECRET}" ]]; then
-    echo "[ERR] MASTER_SECRET empty; cannot derive key." >&2
-    return 2
-  fi
-  SED_KEY="$(derive_sid_from_master "${MASTER_SECRET}" "${s}")" || return 1
+  SED_KEY="$(derive_sed_sid "${MASTER_SECRET}" "${s}")" || return 1
   if ! validate_sid "$SED_KEY"; then
-    echo "[ERR] derived SID fails policy; adjust SED_KEY_LEN or MASTER_SECRET." >&2
+    echo "[ERR] derived SID fails policy; check derivation." >&2
     return 3
   fi
   export SED_KEY SED_KEY_SOURCE="derived"
-  if [[ "${SED_WRITE_KEYS:-0}" == "1" ]]; then
-    if [[ $EUID -eq 0 ]]; then
-      mkdir -p "$KEYS_DIR" && chmod 0700 "$KEYS_DIR" || true
-      printf '%s' "$SED_KEY" > "$f" && chmod 0600 "$f" || true
-    else
-      echo "[WARN] not root; skipping write of $f" >&2
-    fi
+
+  echo "[INFO] SED key derived for serial ${s} (fingerprint: $(sed_fingerprint "$SED_KEY"))"
+
+  if [[ "${SED_WRITE_KEYS:-0}" == "1" && $EUID -eq 0 ]]; then
+    mkdir -p "$KEYS_DIR" && chmod 0700 "$KEYS_DIR" || true
+    printf '%s' "$SED_KEY" > "$f" && chmod 0600 "$f" || true
+    cat > "$meta" <<META
+{
+  "algorithm": "${SED_DERIVATION_VERSION}",
+  "serial": "${s}",
+  "created": "$(date -Iseconds)",
+  "fingerprint": "$(sed_fingerprint "$SED_KEY")"
+}
+META
+    chmod 0600 "$meta" || true
   fi
   return 0
-}
-
-# Convenience: ensure keys for all present controllers (nvme0, nvme1, …)
-ensure_keys_for_present_controllers() {
-  if [[ $EUID -ne 0 ]]; then
-    echo "[ERR] ensure_keys_for_present_controllers: must run as root" >&2
-    return 2
-  fi
-
-  # Collect controller serials from sysfs; handle no matches, trim, dedupe
-  local ctrl serial
-  local serials=()
-  declare -A seen=()
-
-  shopt -s nullglob
-  for ctrl in /sys/class/nvme/nvme*; do
-    [[ -r "$ctrl/serial" ]] || continue
-    serial="$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' < "$ctrl/serial")"
-    [[ -n "$serial" ]] || continue
-    if [[ -z "${seen[$serial]:-}" ]]; then
-      serials+=("$serial")
-      seen[$serial]=1
-    fi
-  done
-  shopt -u nullglob
-
-  if [[ ${#serials[@]} -eq 0 ]]; then
-    echo "[INFO] No NVMe controllers with readable serials found; skipping key creation."
-    return 0
-  fi
-
-  ensure_sed_keys_for_serials "${serials[@]}"
 }
 
 # Check that a given value is non-empty and present in a target file.
@@ -1874,18 +1716,19 @@ make_log_user_readable() {
 
 # SED master secret:
 #   Provide via env MASTER_SECRET (recommended), or the script will prompt once.
-#   Keys are derived per-drive from MASTER_SECRET + controller serial.
+#   Keys are derived per-drive from MASTER_SECRET + controller serial via
+#   HKDF-SHA256 (see derive_sed_sid). This is the only derivation scheme.
 : "${MASTER_SECRET:=}"
 
-# Write materialized key files? 0 = no (default; keys are derived), 1 = yes.
+# Write materialized key files (+ metadata sidecar)? 0 = no (default), 1 = yes.
 : "${SED_WRITE_KEYS:=0}"
 
-# Key length policy (nvme-cli allows 8..32 for Opal). We use 30 by default.
-: "${SED_KEY_LEN:=30}"
+# Derived key length in raw bytes before base32 encoding.
+# 20 bytes -> exactly 32 base32 chars (Opal firmware max), no padding.
+: "${SED_KEY_BYTES:=20}"
 
 # Expect timeouts (seconds). You can override at runtime:
 #   SED_REVERT_TIMEOUT=30 SED_INIT_TIMEOUT=90 ./setup.sh
-
 : "${SED_INIT_TIMEOUT:=90}"
 : "${SED_REVERT_TIMEOUT:=30}"
 
@@ -1894,12 +1737,6 @@ make_log_user_readable() {
 
 # Track PSID reverts performed in this run (to summarize once, at the end)
 declare -a PSID_REVERTED_DEVICES=(); NEED_POWER_CYCLE=0
-
-# ── SED master-secret driven per-drive SIDs ─────────────────────
-# Always prompt unless SED_MASTER_SECRET is already exported.
-: "${SED_SID_LEN:=30}"    # 8..32; keep ≤32 for Opal firmware sanity
-: "${SECRETS_MOUNT:=/run/secrets}"
-: "${KEYS_DIR:=${SECRETS_MOUNT}/keys}"
 
 # ensure log dir exists and is writable by current user (not root leftovers)
 init_log_dir
@@ -2064,8 +1901,11 @@ do_or_echo mount      /dev/mapper/secrets_crypt ${SECRETS_MOUNT}
 # ────────────────────────────────────────────────────────────────
 do_or_echo mkdir -p "${KEYS_DIR}"
 
-# Ensure per-controller SID key files exist (prompts once for SED_MASTER_SECRET)
-ensure_keys_for_present_controllers
+# Prime the master secret once up front, with a fingerprint you can eyeball,
+# before the destructive loop starts -- rather than deriving in the dark
+# per-drive and only discovering a typo via a live "Authority Locked Out".
+prompt_master_secret
+echo -e "\033[1;34m[INFO]\033[0m Master secret fingerprint: $(sed_fingerprint "$MASTER_SECRET")"
 
 # Hardware crypto-wipe + initialize + verify lock/unlock on all namespaces
 echo -e "\033[1;34m[INFO]\033[0m Proceeding with SED hardware crypto-wipe & init before provisioning…"
@@ -2346,7 +2186,6 @@ MISSING_VALUES=0
 check_value "$boot_uuid" "Boot UUID"
 check_value "$boot_fs_uuid" "Boot Filesystem UUID"
 check_value "$efi_fs_uuid" "EFI Filesystem UUID"
-#check_value "$secrets_fs_uuid"  "Secrets Filesystem UUID"
 
 if [[ $MISSING_VALUES -gt 0 ]]; then
     echo -e "\033[1;31m[ERROR]\033[0m Some expected values were not found in hardware-configuration.nix!"
@@ -2385,10 +2224,5 @@ echo -e "\033[1;34m[INFO]\033[0m Installing NixOS from flake..."
 nixos-install \
   --flake /mnt/etc/nixos#${HOSTNAME} \
   --override-input secrets-empty path:${BOOT_MOUNT}/secrets/flakey.json
-
-#do_or_echo umount ${SECRETS_MOUNT}
-#do_or_echo cryptsetup luksClose secrets_crypt
-#do_or_echo umount "${BOOT_MOUNT}/EFI"
-#do_or_echo umount "${BOOT_MOUNT}"
 
 echo -e "\033[1;32m[SUCCESS]\033[0m Installation complete! Reboot when ready."

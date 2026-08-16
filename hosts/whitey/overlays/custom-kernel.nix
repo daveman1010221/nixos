@@ -4,7 +4,7 @@ final: prev:
 
 let
   # Our hardened kernel derivation – just a normal override, no phase hacking.
-  hardenedKernel = prev.linuxKernel.kernels.linux_7_0.overrideAttrs (old: {
+  hardenedKernel = prev.linuxKernel.kernels.linux_7_1.overrideAttrs (old: {
     # Automatic out‑of‑tree build, config from our file.
     useOutOfTreeBuilder = true;
     configfile = myConfig;

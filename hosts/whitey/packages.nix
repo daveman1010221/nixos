@@ -215,6 +215,7 @@ in {
         pwgen
         pyenv
         radeontop
+        restic
         ripgrep
         ripgrep-all
         rocmPackages.rocminfo
