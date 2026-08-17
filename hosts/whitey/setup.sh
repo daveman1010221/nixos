@@ -254,6 +254,14 @@ sed_psid_revert_then_die() {
         }
 
         expect {
+          -re {(?i)continue.*\\(y/n\\)\\?} {
+              send_user "DBG_PSID: confirm#1 -> y\n"
+              send -- "y\r"; exp_continue
+          }
+          -re {(?i)are you sure.*\\(y/n\\)\\?} {
+              send_user "DBG_PSID: confirm#2 -> y\n"
+              send -- "y\r"; exp_continue
+          }
           -re {(?i)psid.*:} {
               send_user "DBG_PSID: PSID prompt detected -> sending (not echoed)\n"
               send -- "$psid\r"; exp_continue
@@ -1720,8 +1728,12 @@ make_log_user_readable() {
 #   HKDF-SHA256 (see derive_sed_sid). This is the only derivation scheme.
 : "${MASTER_SECRET:=}"
 
-# Write materialized key files (+ metadata sidecar)? 0 = no (default), 1 = yes.
-: "${SED_WRITE_KEYS:=0}"
+# Write materialized key files (+ metadata sidecar)? Defaults to 1 (REQUIRED)
+# for this script: the initrd has no MASTER_SECRET to re-derive from at boot,
+# so the keyfile MUST be written to disk here or the system cannot unlock
+# its own root drives on next boot. Only set to 0 if you're deliberately
+# doing a dry-run derivation check with no intent to actually provision.
+: "${SED_WRITE_KEYS:=1}"
 
 # Derived key length in raw bytes before base32 encoding.
 # 20 bytes -> exactly 32 base32 chars (Opal firmware max), no padding.
@@ -1941,6 +1953,21 @@ if (( overall_fail )); then
   exit 1
 fi
 
+# Sanity check: confirm keyfiles actually landed for every namespace we just
+# initialized. A silent write failure here means the system will not be
+# able to unlock its own drives at the next boot — catch it now, not then.
+echo -e "\033[1;34m[INFO]\033[0m Verifying SED keyfiles were written for all namespaces…"
+for dev in $(list_nvme_namespaces); do
+  serial="$(ctrl_serial_for_dev "$dev")" || continue
+  kf="${KEYS_DIR}/nvme-${serial}.key"
+  if [[ ! -s "$kf" ]]; then
+    echo -e "\033[1;31m[ERR]\033[0m Expected keyfile missing after SED init: $kf" >&2
+    echo -e "\033[1;31m[ERR]\033[0m System will not be able to unlock this drive at boot. Aborting." >&2
+    exit 1
+  fi
+  echo -e "\033[1;32m[OK]\033[0m Keyfile present: $kf"
+done
+
 ### CREATING RAID-0 ###
 
 echo -e "\033[1;34m[INFO]\033[0m Ensuring no stale md0 is present..."
@@ -2121,6 +2148,18 @@ sed -i '/boot\.initrd\.kernelModules = \[/,/];/d' "$HWC_PATH"
 
 # Remove luks.cryptoModules block
 sed -i '/boot\.initrd\.luks\.cryptoModules = \[/,/];/d' "$HWC_PATH"
+
+# Strip all fileSystems."..." blocks — filesystems.nix (secrets-driven) is
+# the permanent, reproducible source of truth for mounts. hardware-
+# configuration.nix is gitignored and regenerated fresh on every install,
+# so its fileSystems declarations must not be left in to conflict.
+sed -i '/^  fileSystems\."/,/^    };$/d' "$HWC_PATH"
+
+# hardware-configuration.nix is gitignored (by design — it's meant to be
+# regenerated locally, never committed) but nixos-install resolves the
+# flake through git, so it is invisible to the build unless force-added
+# into the index for this install.
+do_or_echo git -C /mnt/etc/nixos add -f "hosts/${HOSTNAME}/hardware-configuration.nix"
 
 do_or_echo mv /mnt/etc/nixos/configuration.nix /mnt/etc/nixos/configuration.nix.installer
 

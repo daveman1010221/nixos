@@ -23,7 +23,7 @@ let
   devUnit  = "dev-" + devEsc + ".device";
 
   # absolute store paths (so the script never relies on $PATH)
-  cryptsetup = "${pkgs.cryptsetup}/bin/cryptsetup";
+  cryptsetupBin = "${pkgs.cryptsetup}/bin/cryptsetup";
   mount      = "${pkgs.util-linux}/bin/mount";
   umount     = "${pkgs.util-linux}/bin/umount";
   nvme       = "${pkgs.nvme-cli}/bin/nvme";
@@ -94,7 +94,7 @@ in
       
       cleanup() {
         ${umount} /tmp/boot 2>/dev/null || true
-        ${cryptsetup} luksClose secrets_crypt 2>/dev/null || true
+        ${cryptsetupBin} luksClose secrets_crypt 2>/dev/null || true
         ${umount} ${mountPoint} 2>/dev/null || true
       }
       trap cleanup EXIT
@@ -108,7 +108,7 @@ in
         echo
         echo "Manual recovery steps:"
         echo "  1. Unlock the LUKS /secrets volume:"
-        echo "       ${cryptsetup} luksOpen ${secretsDev} secrets_crypt"
+        echo "       ${cryptsetupBin} luksOpen ${secretsDev} secrets_crypt"
         echo
         echo "  2. Mount it read-only and inspect staged keys:"
         echo "       ${mount} -o ro /dev/mapper/secrets_crypt /mnt"
@@ -164,7 +164,7 @@ in
       pass=$(${pkgs.systemd}/bin/systemd-ask-password --no-tty \
           "Passphrase for secrets_crypt" 2>&1)
       [ -n "$pass" ] || { echo "[nvme-hw-key] Empty passphrase"; fail_banner; exit 1; }
-      echo -n "$pass" | ${cryptsetup} luksOpen --key-file=- \
+      echo -n "$pass" | ${cryptsetupBin} luksOpen --key-file=- \
           "$NODE" secrets_crypt
 
       echo "[nvme-hw-key] Mounting secrets_crypt read-only"
@@ -189,7 +189,7 @@ in
 
       echo "[nvme-hw-key] Unmounting and closing secrets_crypt"
       ${umount} /tmp/boot
-      ${cryptsetup} luksClose secrets_crypt
+      ${cryptsetupBin} luksClose secrets_crypt
 
       echo "[nvme-hw-key] Injecting keys per-controller (SED Opal unlock)"
 
