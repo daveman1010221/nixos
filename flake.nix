@@ -528,7 +528,7 @@
               # Avahi is necessary for CUPS local network printer discovery,
               # probably some other stuff, too.
               avahi = {
-                wideArea = true;  # Not sure about this one yet, but true is the default.
+                wideArea = false;  # Not sure about this one yet, but true is the default.
                 publish.enable = false;  # Don't publish unnecessarily.
                 publish.domain = false;  # Don't announce yourself on the LAN unless needed.
 

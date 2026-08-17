@@ -42,7 +42,7 @@ in {
         cl-wordle
         cni-plugins
         #containerd
-        cosmic-applibrary
+        cosmic-app-library
         cosmic-bg
         cosmic-comp
         cosmic-design-demo
@@ -93,7 +93,7 @@ in {
         doas
         #docker
         dosfstools
-        dotacatFast.packages.${system}.default
+        #dotacatFast.packages.${system}.default
         dust
         e2fsprogs
         efibootmgr
@@ -129,7 +129,6 @@ in {
         grub2_efi
         gst_all_1.gstreamer
         gtk3
-        gtkimageview
         gucharmap
         harfbuzz
         haskellPackages.dhall-openapi

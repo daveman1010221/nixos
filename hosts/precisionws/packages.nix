@@ -41,7 +41,7 @@ in {
         cl-wordle
         cni-plugins
         containerd
-        cosmic-applibrary
+        cosmic-app-library
         cosmic-bg
         cosmic-comp
         cosmic-design-demo
