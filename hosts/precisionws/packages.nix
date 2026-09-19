@@ -128,7 +128,6 @@ in {
         grub2_efi
         gst_all_1.gstreamer
         gtk3
-        gtkimageview
         gucharmap
         harfbuzz
         haskellPackages.dhall-openapi

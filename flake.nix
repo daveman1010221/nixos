@@ -16,15 +16,28 @@
       };
     };
     dotacatFast = {
-        url = "github:daveman1010221/dotacat-fast";
+      url = "github:daveman1010221/dotacat-fast";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+      };
     };
     secrets-empty = {
       url   = "path:./secrets-empty.json";   # ← lives in repo
       flake = false;
     };
-    sed-key.url = "github:daveman1010221/sed-key";
+    sed-key = {
+      url = "github:daveman1010221/sed-key";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+      };
+    };
 
-    git-hooks.url = "github:daveman1010221/git-hooks";
+    git-hooks = {
+      url = "github:daveman1010221/git-hooks";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+      };
+    };
   };
 
   # The audit package needs an overlay to get the permissions right for
@@ -687,6 +700,11 @@
               #   preStart = "${pkgs.coreutils}/bin/mkdir -p /var/log/audit";
               # };
             };
+
+            fonts.packages = with pkgs; [
+              nerd-fonts.fira-code
+              nerd-fonts.fira-mono
+            ];
 
             # Prevent all containers from restarting on boot
             systemd.services.docker = {

@@ -93,7 +93,7 @@ in {
         doas
         #docker
         dosfstools
-        #dotacatFast.packages.${system}.default
+        dotacatFast.packages.${system}.default
         dust
         e2fsprogs
         efibootmgr
