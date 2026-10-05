@@ -308,15 +308,20 @@
                 trusted-public-keys = [ ];
                 trusted-users = [ "root" "djshepard" ];
 
-	            "allowed-impure-host-deps" = [
-		          "/boot/secrets/MOK.pem"
-		          "/boot/secrets/MOK.priv"
-		          "/boot/secrets/flakey.json"
-		        ];
+                "allowed-impure-host-deps" = [
+                  "/boot/secrets/MOK.pem?"
+                  "/boot/secrets/MOK.priv?"
+                  "/boot/secrets/flakey.json?"
+                ];
 
-                # Make /boot visible inside the build sandbox
+                # Make /boot visible inside the build sandbox when
+                # present -- a trailing '?' marks this as optional, so
+                # a build succeeds regardless of whether this
+                # (external, sometimes-unmounted) volume is currently
+                # attached, rather than hard-failing every single Nix
+                # build on this machine whenever it isn't.
                 "extra-sandbox-paths" = [
-                  "/boot/secrets"
+                  "/boot/secrets?"
                 ];
               };
               extraOptions = ''
