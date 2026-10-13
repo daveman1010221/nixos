@@ -171,7 +171,6 @@ in {
         nerd-fonts.fira-mono
         networkmanager-iodine
         networkmanager-openvpn
-        networkmanager-vpnc
         nftables
         nixd
         nix-index
@@ -234,7 +233,6 @@ in {
         tmux
         tree
         tree-sitter
-        trunk
         unzip
         usbutils
         uv
