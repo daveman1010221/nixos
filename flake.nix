@@ -657,6 +657,8 @@
               # Enable the OpenSSH daemon.
               openssh.enable = true;
 
+              resolved.settings.Resolve.DNSStubListenerExtra = "127.0.0.1:5300";
+
               # udev.packages = [ pkgs.android-udev-rules ];
             };
 
