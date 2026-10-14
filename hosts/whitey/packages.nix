@@ -186,7 +186,6 @@ in {
         nushellPlugins.skim
         #nushellPlugins.dbus
         #nushellPlugins.units
-        nushellPlugins.semver
         nushellPlugins.polars
         #nushellPlugins.highlight
 

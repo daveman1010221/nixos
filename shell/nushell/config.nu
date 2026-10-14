@@ -62,5 +62,4 @@ plugin add nu_plugin_gstat
 plugin add nu_plugin_query
 plugin add nu_plugin_formats
 plugin add nu_plugin_skim
-plugin add nu_plugin_semver
 plugin add nu_plugin_polars
