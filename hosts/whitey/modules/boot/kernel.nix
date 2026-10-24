@@ -12,8 +12,10 @@
       "tpm_tis_core"
     ];
 
-    #kernelPackages = pkgs.linuxKernel.packages.linux_6_18;
-    kernelPackages = pkgs.linuxPackages_latest;
+    # Custom clang-built kernel: overlays/custom-kernel.nix, config in
+    # overlays/.config, tracked version in ../../kernel-version.nix.
+    # Stock fallback: pkgs.linuxPackages_latest
+    kernelPackages = pkgs.hardened_linux_kernel;
 
     binfmt = {
       emulatedSystems = [ "aarch64-linux" ];
@@ -25,6 +27,8 @@
       includeDefaultModules = false;  # Required for FIPS compliance — prevents
                                       # unexpected driver loading in initrd.
 
+      # Every name here must exist in the custom kernel, as a module or
+      # built in; the initrd build fails otherwise.
       availableKernelModules = lib.mkForce [
         # 7.1 module-name updates: newer kernel generations report these
         # with hyphens rather than underscores, and stock 7.1.1 initrds
@@ -36,16 +40,12 @@
 
         "nls_cp437"
         "nls_iso8859_1"
-        "crypto_null"
-        "cryptd"
         "sha256"
-        "vmd"
         "cbc"
 
         # Keyboard stack (early boot / initrd)
         "i8042"
         "atkbd"
-        "serio_raw"
 
         # Crypto (initrd): AES isn't "Intel-only" despite the name; AMD uses AES-NI too.
         "gf128mul"
@@ -67,7 +67,6 @@
         # Storage
         "nvme"           # NVME drive support
         "nvme_core"
-        "nvme_auth"
         "raid0"          # Software RAID0 via mdadm
         "usb_storage"    # Generic USB storage support
         "scsi_mod"
@@ -75,7 +74,6 @@
         "libata"
         "dm_snapshot"
         "dm_bufio"
-        "dax"
         "md_mod"
 
         # Hardware support
@@ -85,22 +83,16 @@
         "uas"            # USB attached SCSI (booting from USB)
         "usbcore"        # USB support
         "usbhid"
-        "i2c_hid"
-        "hid_multitouch"
-        "hid_sensor_hub"
-        "intel_ishtp_hid"
         "hid_generic"
         "xhci_hcd"       # USB 3.x support
         "xhci_pci"       # USB 3.x support
-        "thunderbolt"
+        "thunderbolt"    # ASM4242 USB4 router; the USB boot drive sits behind it
       ];
 
       luks = {
         cryptoModules = [
           "aesni-intel"    # AES-NI acceleration (AMD-compatible despite name)
           "cbc"
-          "cryptd"
-          "crypto_null"
           "essiv"
           "gf128mul"
           "sha256"
@@ -134,7 +126,6 @@
       "mitigations=auto"
       "pci=realloc"
       "seccomp=1"
-      "unprivileged_userns_clone=1"
       "zswap.compressor=lzo"
       "zswap.enabled=1"
       "zswap.max_pool_percent=10"
@@ -143,6 +134,11 @@
       "fips=1"
       "cgroup_no_v1=net_cls"
       "video=efifb:off"
+
+      # Hardening (kernel-hardening-checker)
+      "page_alloc.shuffle=1"
+      "hash_pointers=always"
+      "iommu=force"
     ];
 
     kernelPatches = [ ];
@@ -151,9 +147,29 @@
       # Enable certain network operations inside rootless containers.
       "net.ipv4.ip_unprivileged_port_start" = 0;
       "net.ipv4.ping_group_range" = "0 2147483647";
-      "kernel.unprivileged_userns_clone" = 1;
+
+      # Hardening (kernel-hardening-checker)
+      "kernel.kptr_restrict" = 2;            # hides kernel addresses from root too; perf/bpftrace
+                                             # symbolization needs 1 (sysctl -w) while tracing
+      "dev.tty.ldisc_autoload" = 0;
+      "fs.protected_fifos" = 2;
+      "fs.protected_regular" = 2;
+      "fs.suid_dumpable" = 0;
+      "net.ipv4.conf.all.accept_redirects" = 0;
+      "net.ipv4.conf.default.accept_redirects" = 0;
+      "net.core.bpf_jit_harden" = 2;
+      "kernel.oops_limit" = 100;
+      "kernel.warn_limit" = 100;
+      "kernel.io_uring_disabled" = 1;        # root and kernel.io_uring_group members only
+
+      # The kernel is built without IPv6, so these keys don't exist.
+      "net.ipv6.conf.all.disable_ipv6" = lib.mkForce null;
+      "net.ipv6.conf.default.disable_ipv6" = lib.mkForce null;
+      "net.ipv6.conf.default.use_tempaddr" = lib.mkForce null;
     };
   };
+
+  networking.enableIPv6 = false;
 
   hardware.cpu.amd.updateMicrocode = true;
   hardware.enableAllFirmware = true;

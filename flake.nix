@@ -211,8 +211,8 @@
 
 	    kernelInputs =
 	      if hasCustomKernel then {
-	        myConfig = builtins.toFile ".config"
-	          (builtins.readFile (builtins.toString hostKernelConfigPath));
+	        # A path, so linuxManualConfig can parse it without IFD.
+	        myConfig = hostKernelConfigPath;
 
 	        # pass paths only
 	        inherit mokPemPath mokPrivPath;
