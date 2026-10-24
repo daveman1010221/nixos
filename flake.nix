@@ -547,21 +547,28 @@
               # probably some other stuff, too.
               avahi = {
                 wideArea = false;  # Not sure about this one yet, but true is the default.
-                publish.enable = false;  # Don't publish unnecessarily.
-                publish.domain = false;  # Don't announce yourself on the LAN unless needed.
-
-                # Publish all local IP addresses. I assume this means only
-                # those of allowed interfaces.
-                publish.addresses = false;
-
-                allowInterfaces = [ "wlp0s20f3" ];
-                allowPointToPoint = false;
-                domainName = "local";
                 enable = true;
-                ipv4 = true;
-                ipv6 = false;
                 openFirewall = true;  # 5353
                 nssmdns4 = true;
+
+                # Which interfaces avahi uses is per host:
+                # hosts/<host>/modules/services/avahi.nix
+                settings = {
+                  publish = {
+                    disable-publishing = true;  # Don't publish unnecessarily.
+                    publish-domain = false;     # Don't announce yourself on the LAN unless needed.
+
+                    # Publish all local IP addresses. I assume this means only
+                    # those of allowed interfaces.
+                    publish-addresses = false;
+                  };
+                  server = {
+                    allow-point-to-point = false;
+                    domain-name = "local";
+                    use-ipv4 = true;
+                    use-ipv6 = false;
+                  };
+                };
               };
               blueman.enable = true;
 

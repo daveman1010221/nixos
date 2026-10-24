@@ -150,7 +150,7 @@ in {
         kubernetes-helm
         libcanberra-gtk3
         (lib.hiPrio xwayland)
-        libreoffice-fresh
+        libreoffice
         librewolf
         librsvg
         libsoup_3
