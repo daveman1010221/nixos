@@ -101,19 +101,22 @@ in
           Type = "oneshot";
           User = cfg.user;
         };
-        path = [ pkgs.restic pkgs.util-linux ];
+        path = [ pkgs.restic ];
         script = ''
           set -e
-          if ! mountpoint -q ${cfg.mountPoint}; then
-            echo "USB drive not mounted, aborting backup"
-            exit 1
-          fi
           restic -r ${repoPath} ${authFlagsStr} backup /home/${cfg.user} \
             ${excludeFlagsStr}
           restic -r ${repoPath} ${authFlagsStr} forget \
             --keep-weekly ${toString cfg.keepWeekly} --keep-monthly ${toString cfg.keepMonthly} --prune
         '';
-        bindsTo = [ mountUnit ];
+        # The mount unit exists only while the drive is plugged in, and
+        # BindsTo= on a missing unit makes the timer fail to queue the job.
+        # So skip the run when the drive is absent, and stop it if the drive
+        # is unmounted mid-run; neither requires the mount unit to exist.
+        unitConfig = {
+          ConditionPathIsMountPoint = cfg.mountPoint;
+          StopPropagatedFrom = mountUnit;
+        };
         after = [ mountUnit ];
         wantedBy = [ mountUnit ];
       };
