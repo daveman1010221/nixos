@@ -116,6 +116,7 @@
     kernelModules = [
       "kvm-amd"
       "vxlan"          # Required for usernetes/rootless Kubernetes overlay networking
+      "pkcs8_key_parser" # Lets the kernel keyring take PKCS#8 private keys (keyctl padd asymmetric); never loaded on demand
     ];
 
     extraModulePackages = [ ];
