@@ -24,10 +24,21 @@ let
   kmodigestCat = "sed 's/$/\\.cer/' modules.order | xargs -d'\\n' cat > modules.cer";
   kmodigestRm = "sed 's/$/\\.cer/' modules.order | xargs -d'\\n' rm";
 
+  # What NixOS modules ask of a kernel (kernel.features): a stock nixpkgs kernel declares these, and
+  # linuxManualConfig leaves them empty, so they are read from the config itself. graphics.nix asserts
+  # ia32Emulation for hardware.graphics.enable32Bit; the iptables firewall reads netfilterRPFilter.
+  configText = builtins.readFile myConfig;
+  builds = sym: lib.any (v: lib.hasInfix "\nCONFIG_${sym}=${v}\n" configText) [ "y" "m" ];
+
   # Used verbatim: no generate-config.pl, no common-config.nix.
   manual = prev.linuxManualConfig {
     inherit (base) src version modDirVersion kernelPatches;
     configfile = myConfig;
+    features = {
+      ia32Emulation = builds "IA32_EMULATION";
+      efiBootStub = builds "EFI_STUB";
+      netfilterRPFilter = builds "IP_NF_MATCH_RPFILTER";
+    };
     stdenv = llvm.stdenv;
     extraMakeFlags = [
       "LLVM=1"
