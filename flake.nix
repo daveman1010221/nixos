@@ -183,8 +183,11 @@
 	  let
 	    overlayDir = hostDir + "/overlays";
 
-	    customKernelPath = overlayDir + "/custom-kernel.nix";
-	    hasCustomKernel  = builtins.pathExists customKernelPath;
+	    # A host builds its own kernel when it names one: hosts/<host>/kernel-version.nix, with its .config in its
+	    # overlays. The overlay is shared (flakes/kernel/custom-kernel.nix).
+	    kernelVersionPath = hostDir + "/kernel-version.nix";
+	    hasCustomKernel   = builtins.pathExists kernelVersionPath;
+	    customKernelPath  = ./flakes/kernel/custom-kernel.nix;
 
 	    hostKernelConfigPath = overlayDir + "/.config";
             mokPemPath  = "/boot/secrets/MOK.pem";
@@ -195,15 +198,14 @@
 		lib.filter
 		  (p:
 		    lib.hasSuffix ".nix" (toString p)
-		    && toString (dirOf p) == toString overlayDir
-		    && baseNameOf p != "custom-kernel.nix")
+		    && toString (dirOf p) == toString overlayDir)
 		  (lib.filesystem.listFilesRecursive overlayDir)
 	      else
 		[ ];
 
 	    assertKernelConfig =
 	      lib.assertMsg (!hasCustomKernel || builtins.pathExists hostKernelConfigPath)
-	        "Missing host kernel .config at ${toString hostKernelConfigPath} (required because custom-kernel.nix exists)";
+	        "Missing host kernel .config at ${toString hostKernelConfigPath} (required because kernel-version.nix exists)";
 
 	    # assertMokFiles =
 	    #   lib.assertMsg (!hasCustomKernel || (builtins.pathExists mokPemPath && builtins.pathExists mokPrivPath))
@@ -213,6 +215,7 @@
 	      if hasCustomKernel then {
 	        # A path, so linuxManualConfig can parse it without IFD.
 	        myConfig = hostKernelConfigPath;
+	        kernelVersion = import kernelVersionPath;
 
 	        # pass paths only
 	        inherit mokPemPath mokPrivPath;

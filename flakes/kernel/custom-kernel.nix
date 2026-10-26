@@ -1,4 +1,7 @@
-{ myConfig, ... }:
+# A host's hardened, clang-built kernel, from its own .config (hosts/<host>/overlays/.config) and the nixpkgs kernel
+# its hosts/<host>/kernel-version.nix names. flake.nix applies it to a host that has a kernel-version.nix. Shared by
+# every host that builds its own kernel; the sandbox (sandbox/shell.nix) builds from the same version file.
+{ myConfig, kernelVersion, ... }:
 
 final: prev:
 
@@ -8,7 +11,7 @@ let
 
   # Source, version and upstream patches (bridge-stp-helper,
   # request-key-helper, ...) come from the nixpkgs kernel we track.
-  base = prev.linuxKernel.kernels.${(import ../kernel-version.nix).attr};
+  base = prev.linuxKernel.kernels.${kernelVersion.attr};
 
   # nixpkgs replaces kbuild's module signing with kmodigest by passing
   # cmd_sign= on the make command line. Drop it so kbuild signs with the key

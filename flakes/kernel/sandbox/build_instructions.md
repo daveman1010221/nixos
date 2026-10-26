@@ -1,8 +1,10 @@
-## Custom Kernel Build Sandbox — Whitey
+## Custom Kernel Build Sandbox
 
-The kernel version comes from `../kernel-version.nix` (currently `linux_7_3`),
-shared with `../overlays/custom-kernel.nix` so the sandbox and the flake build
-the same source with the same nixpkgs patches.
+For every host that builds its own kernel (one with a `hosts/<host>/kernel-version.nix`; whitey, and precisionws
+once its config exists). The kernel version comes from the host's `kernel-version.nix` (whitey's is `linux_7_3`),
+which the shared overlay `flakes/kernel/custom-kernel.nix` reads too, so the sandbox and the flake build the same
+source with the same nixpkgs patches. The host's config is `hosts/<host>/overlays/.config`, and the sandbox knows
+the host as `$KHOST`.
 
 ### Enter the environment
 
@@ -10,7 +12,7 @@ From a working directory outside `/etc/nixos` (the kernel tree and build
 output land in the current directory):
 
 ```bash
-nix develop --impure --file /etc/nixos/hosts/whitey/kernel-sandbox/shell.nix
+nix develop --impure --file /etc/nixos/hosts/<host>/kernel-sandbox/shell.nix
 ```
 
 Not `nix-shell`: Nix 2.34's `nix-shell` fails with
@@ -45,13 +47,13 @@ kgo          # runs kprep → interactive nconfig → kkernel
 
 4. **Save the updated config back to your flake**  
 ```bash
-   ksaveconfig   # copies .config to repo root and /etc/nixos/hosts/whitey/overlays/.config,
+   ksaveconfig   # copies .config to repo root and /etc/nixos/hosts/$KHOST/overlays/.config,
                  # and writes savedefconfig output as defconfig beside it
 ```
 
 ### Moving to a new kernel version
 
-1. Change `attr` in `../kernel-version.nix`, re-enter the shell from a
+1. Change `attr` in the host's `kernel-version.nix`, re-enter the shell from a
    directory without the old `linux-*` tree (unpacking only happens when none
    is found), and run `kphases` to unpack and patch the new one.
 2. `knew` reports what the bump does to the current config before you touch it:
@@ -65,7 +67,7 @@ kgo          # runs kprep → interactive nconfig → kkernel
 | Command | What it does |
 |---------|--------------|
 | `kstatus` | Show source tree, out‑of‑tree build directory, config presence, and signing key status |
-| `kcheck` | Run kernel-hardening-checker on the out-dir `.config`, whitey's configured kernel command line, and the running sysctls; output also saved to `<out dir>/kcheck.txt`. Extra args go to the checker (`kcheck -m show_fail`); `KCHECK_CMDLINE=/proc/cmdline kcheck` checks the booted command line instead |
+| `kcheck` | Run kernel-hardening-checker on the out-dir `.config`, the host's configured kernel command line, and the running sysctls; output also saved to `<out dir>/kcheck.txt`. Extra args go to the checker (`kcheck -m show_fail`); `KCHECK_CMDLINE=/proc/cmdline kcheck` checks the booted command line instead |
 | `knew` | Version-bump report (see above); `knew <config>` for a config other than the repo-root one |
 | `klog`   | Tail the build log (default last 200 lines) |
 | `kenv`   | Print toolchain and environment variables |

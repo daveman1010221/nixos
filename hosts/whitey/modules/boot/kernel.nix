@@ -12,8 +12,8 @@
       "tpm_tis_core"
     ];
 
-    # Custom clang-built kernel: overlays/custom-kernel.nix, config in
-    # overlays/.config, tracked version in ../../kernel-version.nix.
+    # Custom clang-built kernel: the shared flakes/kernel/custom-kernel.nix,
+    # config in overlays/.config, tracked version in ../../kernel-version.nix.
     # Stock fallback: pkgs.linuxPackages_latest
     kernelPackages = pkgs.hardened_linux_kernel;
 
