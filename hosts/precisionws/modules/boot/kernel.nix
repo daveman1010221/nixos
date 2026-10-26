@@ -5,10 +5,13 @@
 # in
 {
   boot = {
-    # blacklistedKernelModules = [
-    #   "encrypted_keys"
-    #   "trusted"
-    # ];
+    # The internal Intel AX211 Wi-Fi is off: the USB adapter (MediaTek MT7921AU, mt7921u) is used instead
+    # (2026-10-26). The kernel still builds iwlwifi; delete these to turn the card back on. Its Bluetooth is
+    # btusb's, and stays on.
+    blacklistedKernelModules = [
+      "iwlmvm"
+      "iwlwifi"
+    ];
 
     # Custom clang-built kernel: the shared flakes/kernel/custom-kernel.nix,
     # config in overlays/.config (from whitey's defconfig and

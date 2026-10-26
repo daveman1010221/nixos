@@ -204,3 +204,7 @@ CONFIG_NFT_XFRM=m
 # shared virtual addressing (2026-10-26).
 CONFIG_X86_INTEL_TSX_MODE_OFF=y
 CONFIG_INTEL_IOMMU_SVM=y
+# The USB Wi-Fi adapter, a MediaTek MT7921AU (0e8d:7961), which this host uses in place of the internal AX211
+# (2026-10-26; iwlwifi is blacklisted in kernel.nix, and still built). Its firmware is linux-firmware's mediatek/.
+CONFIG_WLAN_VENDOR_MEDIATEK=y
+CONFIG_MT7921U=m
