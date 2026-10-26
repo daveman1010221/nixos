@@ -1,6 +1,6 @@
 # precisionws: a hardened, clang-built Linux 7.3, matching whitey's
 
-Status, 2026-10-26: cleared by the maintainer; step 1 done. Written from a comparison of whitey's 7.3 config
+Status, 2026-10-26: cleared by the maintainer; steps 1 and 2 done. Written from a comparison of whitey's 7.3 config
 (`hosts/whitey/overlays/.config`) with the one this host last built (`hosts/precisionws/overlays/.config`, Linux 6.19.8),
 the 283 modules loaded here on the stock 7.2.9, `lspci -nnk`, and the 7.3 source's Kconfig files and Makefiles.
 
@@ -77,6 +77,21 @@ and warn limits of 100. This host's own parameters stay (`nosmt`, `intel_iommu=o
    `KVM_INTEL` for `KVM_AMD`; drop what is AMD's alone (amdgpu, k10temp, the AMD EDAC, sp5100, gpio-amdpt,
    gigabyte-wmi, R8169) since this host has none of it; `olddefconfig`, then `ksaveconfig` and `kcheck`
    (kernel-hardening-checker) in the sandbox, and a diff against whitey's to review.
+   *Done 2026-10-26:* `overlays/kernel.fragment` (precisionws's lines after whitey's `defconfig`, each group with its
+   reason), resolved in the sandbox with `olddefconfig` into `overlays/.config` and `overlays/defconfig` (the 6.19.8
+   config is in git history). Checked: every line of the fragment holds in the result; every module this host loads
+   has its option on except those left out on purpose (whitey's own omissions: configfs, dmi_sysfs, TEE, NVMe in-band
+   authentication, the non-Intel Bluetooth quirks; what IPv6 off removes: `nf_defrag_ipv6`, `nf_reject_ipv6`,
+   `nft_reject_inet`, since `inet` needs IPv6 on 7.3; and `intel_spi` with MTD (write access to the firmware flash),
+   mousedev, mac_hid, the AVS audio driver, which is not the one bound, and the keys below); the modules the
+   nix-usernetes node adds when it runs (overlay, veth, nftables NAT, fib, reject, `nft_compat` with `xt_conntrack`
+   and `xt_comment`, which the kubelet's KUBE-FIREWALL rule uses) are all built; `br_netfilter` is not loaded and not
+   built. kernel-hardening-checker, configs only: whitey 208 OK and 42 FAIL, precisionws 206 and 44, the difference
+   being exactly `CFI_AUTO_DEFAULT` and `TRIM_UNUSED_KSYMS`. The flake now has precisionws's custom kernel
+   (`hardened_linux_kernel`, `92p1vpyn…-linux-7.3.drv`), and precisionws still boots the stock one until step 5
+   (its kernel derivation is unchanged, and so is whitey's).
+   For step 5, from this: the initrd list asks for `cryptd` and `nvme_auth`, which this config does not build, so
+   they come out of it; the ruleset's `table ip6 filter` comes out (no IPv6), the rest is `table ip`.
 3. **The MOK key.** `kmok_check` on `/boot/secrets/MOK.pem` and `MOK.priv` with `/boot` mounted; `kmok_generate` if
    precisionws has none.
 4. **NVIDIA** builds through kbuild against the custom kernel's `dev` output and is signed with the same key (whitey's
