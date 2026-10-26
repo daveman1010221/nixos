@@ -1,6 +1,6 @@
 # precisionws: a hardened, clang-built Linux 7.3, matching whitey's
 
-Status, 2026-10-26: cleared by the maintainer; steps 1, 2 and 5 done, not yet built (steps 3, 4, 6 need /boot mounted). Written from a comparison of whitey's 7.3 config
+Status, 2026-10-26: cleared by the maintainer; steps 1 to 6 done (built and checked, not booted); step 7, the first boot, is next. Written from a comparison of whitey's 7.3 config
 (`hosts/whitey/overlays/.config`) with the one this host last built (`hosts/precisionws/overlays/.config`, Linux 6.19.8),
 the 283 modules loaded here on the stock 7.2.9, `lspci -nnk`, and the 7.3 source's Kconfig files and Makefiles.
 
@@ -141,6 +141,20 @@ and warn limits of 100. This host's own parameters stay (`nosmt`, `intel_iommu=o
    `nixos_update` builds and installs this kernel: not before step 6.
 6. **Build and check without booting:** the kernel, the initrd (every keyboard and storage module present and
    signed), NVIDIA, and the system's `toplevel`.
+   *Done 2026-10-26 (steps 3, 4 and 6, with /boot mounted):* the MOK is this host's from 2026-01-07
+   (`CN=precisionws-MOK-20260107`, RSA 4096, sha256 `EB:3F:3B:46:…:42:A7`); `MOK.priv` held the key alone, and kbuild
+   needs key and certificate in the file `CONFIG_MODULE_SIG_KEY` names (inherited from whitey's defconfig), so the
+   certificate was appended, after checking the two are a pair (`MOK.priv.bak-20261026` keeps the old file). Both are
+   `root:nixbld`, `0640`, which a flake build reads through `sandbox-paths`. Built: the kernel, NVIDIA's open modules
+   (595.104.02), the system's modules tree and the initrd's module closure, against placeholder secrets for the parts
+   that need them. NVIDIA's modules first built unsigned: the old overlay had signed them itself, and the shared one,
+   from whitey (no out-of-tree modules), did not; fixed in `flakes/kernel/custom-kernel.nix` (the kernel's dev output
+   keeps the signing certificate, so kbuild signs them; module aggregation no longer expects kmodigest certificates),
+   and `flakes/modules/kernel-module-signatures.nix` now fails the system build on any module not signed by the host's
+   key. Checked: the certificate the kernel embeds is the MOK; all 289 modules in the system's tree (the kernel's 284,
+   NVIDIA's five) verify against it with openssl, and a tampered one does not; no private key in the kernel's outputs;
+   the initrd's 25 modules are signed, and its keyboard stack (`i8042`, `usbhid`, `hid_generic`, `xhci_hcd`,
+   `xhci_pci` built in; `atkbd`, `serio_raw` in the initrd), the touchpad's and the unlock path's are all there.
 7. **The first boot, with the 7.2.9 generation one menu entry away:** the keyboard at the passphrase prompt, the
    display (xe), Wi-Fi under FIPS, Bluetooth, audio, the touchpad, `nvidia-offload`, suspend and resume, rootless
    podman, and the nix-usernetes node with kube-proxy now single-stack (and `lsmod` with the cluster up, for step 2).
