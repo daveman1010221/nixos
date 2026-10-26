@@ -165,6 +165,7 @@ in {
         microsoft-edge
         mullvad
         mullvad-compass
+        mullvad-vpn
         fastfetch
         nerdctl
         nerd-fonts.fira-code
@@ -179,7 +180,7 @@ in {
         nvim-pkg
         nvme-cli
         nvtopPackages.intel
-        ollama-cuda
+        #ollama-cuda
         openssl
         openssl.dev
         pandoc

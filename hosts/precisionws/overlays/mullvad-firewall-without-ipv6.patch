@@ -1,0 +1,453 @@
+diff --git a/talpid-core/src/firewall/linux.rs b/talpid-core/src/firewall/linux.rs
+index 269577415..8a33f75da 100644
+--- a/talpid-core/src/firewall/linux.rs
++++ b/talpid-core/src/firewall/linux.rs
+@@ -11,6 +11,7 @@ use std::{
+     ffi::CStr,
+     fs, io,
+     net::{IpAddr, Ipv4Addr},
++    path::Path,
+     sync::LazyLock,
+ };
+ use talpid_cgroup::v2::CGroup2;
+@@ -109,6 +110,9 @@ pub struct Firewall {
+     /// The net_cls id of the v1 cgroup used for split tunneling.
+     /// This is used as a fallback to [`Self::excluded_cgroup2`] since old kernels don't support cgroups v2.
+     net_cls: Option<u32>,
++    /// The nftables family of [`TABLE_NAME`]. This is `inet`, which covers both IPv4 and IPv6,
++    /// unless the kernel has no IPv6 support. See [`kernel_supports_ipv6`].
++    table_family: ProtoFamily,
+ }
+ 
+ impl Firewall {
+@@ -134,16 +138,24 @@ impl Firewall {
+             log::error!("cgroup2 support disabled, but excluded_cgroup2 was provided");
+         }
+ 
++        let table_family = if kernel_supports_ipv6() {
++            ProtoFamily::Inet
++        } else {
++            log::info!("The kernel has no IPv6 support, using an IPv4-only firewall table");
++            ProtoFamily::Ipv4
++        };
++
+         Ok(Firewall {
+             fwmark,
+             excluded_cgroup2,
+             net_cls,
++            table_family,
+         })
+     }
+ 
+     /// Apply a [`FirewallPolicy`] by setting up [`TABLE_NAME`] nftable.
+     pub fn apply_policy(&mut self, policy: FirewallPolicy) -> Result<()> {
+-        let table = Table::new(TABLE_NAME, ProtoFamily::Inet);
++        let table = Table::new(TABLE_NAME, self.table_family);
+         let batch = PolicyBatch::new(&table).finalize(&policy, self)?;
+         Self::send_and_process(&batch)?;
+         Self::apply_kernel_config(&policy);
+@@ -152,7 +164,7 @@ impl Firewall {
+ 
+     /// Remove [`TABLE_NAME`] nftable.
+     pub fn reset_policy(&mut self) -> Result<()> {
+-        let table = Table::new(TABLE_NAME, ProtoFamily::Inet);
++        let table = Table::new(TABLE_NAME, self.table_family);
+         let mut batch = Batch::new();
+ 
+         // Our batch will add and remove the table even though the goal is just to remove
+@@ -269,6 +281,8 @@ struct PolicyBatch<'a> {
+     prerouting_chain: Chain<'a>,
+     mangle_chain: Chain<'a>,
+     nat_chain: Chain<'a>,
++    /// Whether the table handles IPv6. See [`Self::handles`].
++    ipv6: bool,
+ }
+ 
+ impl<'a> PolicyBatch<'a> {
+@@ -322,9 +336,17 @@ impl<'a> PolicyBatch<'a> {
+             prerouting_chain,
+             mangle_chain,
+             nat_chain,
++            ipv6: table.get_family() == ProtoFamily::Inet,
+         }
+     }
+ 
++    /// Whether rules for `ip` belong in this table. An `ip` table, used when the kernel has no
++    /// IPv6 support, gets no IPv6 rules: they could never match there, and `nft` cannot display
++    /// them.
++    fn handles(&self, ip: IpAddr) -> bool {
++        ip.is_ipv4() || self.ipv6
++    }
++
+     /// Finalize the nftnl message batch by adding every firewall rule needed to satisfy the given
+     /// policy.
+     pub fn finalize(
+@@ -401,6 +423,9 @@ impl<'a> PolicyBatch<'a> {
+         } = policy
+         {
+             for server in dns_config.tunnel_config() {
++                if !self.handles(*server) {
++                    continue;
++                }
+                 let allow_rule = allow_tunnel_dns_rule(
+                     &self.mangle_chain,
+                     &tunnel.interface,
+@@ -526,6 +551,9 @@ impl<'a> PolicyBatch<'a> {
+             add_verdict(&mut in_v4, &Verdict::Accept);
+             self.batch.add(&in_v4, nftnl::MsgType::Add);
+         }
++        if !self.ipv6 {
++            return;
++        }
+         // Outgoing DHCPv6 request
+         for chain in &[&self.out_chain, &self.forward_chain] {
+             for dhcpv6_server in super::DHCPV6_SERVER_ADDRS {
+@@ -551,6 +579,9 @@ impl<'a> PolicyBatch<'a> {
+     }
+ 
+     fn add_ndp_rules(&mut self) {
++        if !self.ipv6 {
++            return;
++        }
+         // The non-0 constants used are icmpv6 transport header types corresponding
+         // to the type of message that each block deals with.
+ 
+@@ -738,6 +769,9 @@ impl<'a> PolicyBatch<'a> {
+     }
+ 
+     fn add_allow_tunnel_endpoint_rules(&mut self, endpoint: &AllowedEndpoint, fwmark: u32) {
++        if !self.handles(endpoint.endpoint.address.ip()) {
++            return;
++        }
+         let mut prerouting_rule = Rule::new(&self.prerouting_chain);
+         // Mark incoming traffic from endpoint with fwmark
+         check_endpoint(&mut prerouting_rule, End::Src, &endpoint.endpoint);
+@@ -784,6 +818,9 @@ impl<'a> PolicyBatch<'a> {
+     /// Adds firewall rules allow traffic to flow to the API. Allows the app to reach the API in
+     /// blocked states.
+     fn add_allow_endpoint_rules(&mut self, endpoint: &AllowedEndpoint) {
++        if !self.handles(endpoint.endpoint.address.ip()) {
++            return;
++        }
+         let mut in_rule = Rule::new(&self.in_chain);
+         // Allow incoming traffic from established connections to the endpoint
+         check_endpoint(&mut in_rule, End::Src, &endpoint.endpoint);
+@@ -814,6 +851,9 @@ impl<'a> PolicyBatch<'a> {
+         protocol: TransportProtocol,
+         host: IpAddr,
+     ) -> Result<()> {
++        if !self.handles(host) {
++            return Ok(());
++        }
+         for chain in &[&self.out_chain, &self.forward_chain] {
+             let allow_rule = allow_tunnel_dns_rule(chain, interface, protocol, host)?;
+             self.batch.add(&allow_rule, nftnl::MsgType::Add);
+@@ -827,6 +867,9 @@ impl<'a> PolicyBatch<'a> {
+         protocol: TransportProtocol,
+         host: IpAddr,
+     ) -> Result<()> {
++        if !self.handles(host) {
++            return Ok(());
++        }
+         let chains = [
+             (&self.out_chain, Direction::Out),
+             (&self.forward_chain, Direction::Out),
+@@ -890,6 +933,9 @@ impl<'a> PolicyBatch<'a> {
+         tunnel_interface: &str,
+         endpoint: &Endpoint,
+     ) -> Result<()> {
++        if !self.handles(endpoint.address.ip()) {
++            return Ok(());
++        }
+         for (chain, dir, end) in [
+             (&self.out_chain, Direction::Out, End::Dst),
+             (&self.in_chain, Direction::In, End::Src),
+@@ -936,6 +982,9 @@ impl<'a> PolicyBatch<'a> {
+     /// after the rule allowing the tunnel, otherwise even the tunnel can't talk to that IP.
+     fn add_block_cve_2019_14899(&mut self, tunnel: &TunnelMetadata) {
+         for tunnel_ip in &tunnel.ips {
++            if !self.handles(*tunnel_ip) {
++                continue;
++            }
+             let mut rule = Rule::new(&self.in_chain);
+             check_ip(&mut rule, End::Dst, *tunnel_ip);
+             add_verdict(&mut rule, &Verdict::Drop);
+@@ -948,6 +997,9 @@ impl<'a> PolicyBatch<'a> {
+         for chain in &[&self.out_chain, &self.forward_chain] {
+             // LAN -> LAN
+             for net in ALLOWED_LAN_NETS {
++                if !self.handles(net.ip()) {
++                    continue;
++                }
+                 let mut out_rule = Rule::new(chain);
+                 check_net(&mut out_rule, End::Dst, net);
+                 add_verdict(&mut out_rule, &Verdict::Accept);
+@@ -956,6 +1008,9 @@ impl<'a> PolicyBatch<'a> {
+ 
+             // LAN -> Multicast
+             for net in ALLOWED_LAN_MULTICAST_NETS {
++                if !self.handles(net.ip()) {
++                    continue;
++                }
+                 let mut rule = Rule::new(chain);
+                 check_net(&mut rule, End::Dst, net);
+                 add_verdict(&mut rule, &Verdict::Accept);
+@@ -966,6 +1021,9 @@ impl<'a> PolicyBatch<'a> {
+         // Input chain
+         // LAN -> LAN
+         for net in ALLOWED_LAN_NETS {
++            if !self.handles(net.ip()) {
++                continue;
++            }
+             let mut in_rule = Rule::new(&self.in_chain);
+             check_net(&mut in_rule, End::Src, net);
+             add_verdict(&mut in_rule, &Verdict::Accept);
+@@ -1174,6 +1232,17 @@ fn set_src_valid_mark_sysctl() -> io::Result<()> {
+     fs::write(PROC_SYS_NET_IPV4_CONF_SRC_VALID_MARK, b"1")
+ }
+ 
++/// Whether the kernel can handle IPv6 at all.
++///
++/// This is not the same as IPv6 being enabled: `/proc/sys/net/ipv6` exists whenever the kernel
++/// has IPv6, also when it is disabled with the `disable_ipv6` sysctl. It is missing when the
++/// kernel is built without IPv6 (`CONFIG_IPV6=n`), where nftables has neither the `inet` nor the
++/// `ip6` family, or when IPv6 is disabled at boot (`ipv6.disable=1`). In both cases the kernel
++/// handles no IPv6 traffic, so an `ip` table is enough.
++fn kernel_supports_ipv6() -> bool {
++    Path::new("/proc/sys/net/ipv6").exists()
++}
++
+ /// If the `net.ipv4.conf.all.arp_ignore` setting is below 2, sets it to 2.
+ ///
+ /// 2 means: reply only if the target IP address is local address configured on the incoming
+@@ -1188,3 +1257,230 @@ fn lock_down_arp_ignore_sysctl() -> io::Result<()> {
+     }
+     Ok(())
+ }
++
++#[cfg(test)]
++mod test {
++    use super::*;
++    use nftnl::nftnl_sys as sys;
++    use std::{ffi::CStr, mem::size_of};
++    use talpid_dns::DnsConfig;
++    use talpid_types::net::{AllowedClients, AllowedTunnelTraffic, Endpoint};
++
++    /// The parts of an nftables expression these tests look at.
++    #[derive(Debug)]
++    enum Expr {
++        /// `meta` with this key.
++        Meta(u32),
++        /// `cmp` against this data.
++        Cmp(Vec<u8>),
++        /// `payload` load of `len` bytes from header `base`.
++        Payload {
++            base: u32,
++            len: u32,
++        },
++        Other,
++    }
++
++    /// Every rule `batch` adds, parsed back into its expressions.
++    fn rules(batch: &FinalizedBatch) -> Vec<Vec<Expr>> {
++        let new_rule = ((libc::NFNL_SUBSYS_NFTABLES as u16) << 8) | libc::NFT_MSG_NEWRULE as u16;
++        let mut rules = vec![];
++        for mut page in batch {
++            while page.len() >= size_of::<libc::nlmsghdr>() {
++                // SAFETY: The page holds netlink messages built by libnftnl.
++                let header = unsafe { page.as_ptr().cast::<libc::nlmsghdr>().read_unaligned() };
++                if header.nlmsg_type == new_rule {
++                    rules.push(parse_rule(page.as_ptr()));
++                }
++                let len = (header.nlmsg_len as usize).next_multiple_of(4);
++                if len == 0 {
++                    break;
++                }
++                page = &page[len.min(page.len())..];
++            }
++        }
++        rules
++    }
++
++    fn parse_rule(message: *const u8) -> Vec<Expr> {
++        let mut exprs = vec![];
++        // SAFETY: `message` is a complete NFT_MSG_NEWRULE message, and every expression is read
++        // through libnftnl's accessors before the rule is freed.
++        unsafe {
++            let rule = sys::nftnl_rule_alloc();
++            assert_eq!(sys::nftnl_rule_nlmsg_parse(message.cast(), rule), 0);
++            let iter = sys::nftnl_expr_iter_create(rule);
++            loop {
++                let expr = sys::nftnl_expr_iter_next(iter);
++                if expr.is_null() {
++                    break;
++                }
++                let name =
++                    CStr::from_ptr(sys::nftnl_expr_get_str(expr, sys::NFTNL_EXPR_NAME as u16));
++                exprs.push(match name.to_str().unwrap() {
++                    "meta" => Expr::Meta(sys::nftnl_expr_get_u32(
++                        expr,
++                        sys::NFTNL_EXPR_META_KEY as u16,
++                    )),
++                    "cmp" => {
++                        let mut len = 0;
++                        let data = sys::nftnl_expr_get(
++                            expr,
++                            sys::NFTNL_EXPR_CMP_DATA as u16,
++                            &raw mut len,
++                        );
++                        Expr::Cmp(
++                            std::slice::from_raw_parts(data.cast::<u8>(), len as usize).to_vec(),
++                        )
++                    }
++                    "payload" => Expr::Payload {
++                        base: sys::nftnl_expr_get_u32(expr, sys::NFTNL_EXPR_PAYLOAD_BASE as u16),
++                        len: sys::nftnl_expr_get_u32(expr, sys::NFTNL_EXPR_PAYLOAD_LEN as u16),
++                    },
++                    _ => Expr::Other,
++                });
++            }
++            sys::nftnl_expr_iter_destroy(iter);
++            sys::nftnl_rule_free(rule);
++        }
++        exprs
++    }
++
++    /// Counts the IPv6-specific matches in `rules`: checks that a packet is IPv6, ICMPv6 matches,
++    /// and loads of IPv6 addresses.
++    fn count_ipv6_matches(rules: &[Vec<Expr>]) -> usize {
++        let mut ipv6_matches = 0;
++        for rule in rules {
++            let mut meta_key = None;
++            for expr in rule {
++                match expr {
++                    Expr::Meta(key) => meta_key = Some(*key),
++                    Expr::Cmp(data) => match meta_key.take() {
++                        Some(key)
++                            if key == libc::NFT_META_NFPROTO as u32
++                                && data[..] == [libc::NFPROTO_IPV6 as u8] =>
++                        {
++                            ipv6_matches += 1;
++                        }
++                        Some(key)
++                            if key == libc::NFT_META_L4PROTO as u32
++                                && data[..] == [libc::IPPROTO_ICMPV6 as u8] =>
++                        {
++                            ipv6_matches += 1;
++                        }
++                        _ => (),
++                    },
++                    Expr::Payload { base, len } => {
++                        meta_key = None;
++                        if *base == libc::NFT_PAYLOAD_NETWORK_HEADER as u32 && *len == 16 {
++                            ipv6_matches += 1;
++                        }
++                    }
++                    Expr::Other => meta_key = None,
++                }
++            }
++        }
++        ipv6_matches
++    }
++
++    fn allowed(address: &str) -> AllowedEndpoint {
++        AllowedEndpoint {
++            endpoint: Endpoint {
++                address: address.parse().unwrap(),
++                protocol: TransportProtocol::Udp,
++            },
++            clients: AllowedClients::Root,
++        }
++    }
++
++    /// Tunnel metadata on the loopback interface, which exists everywhere the tests run.
++    fn tunnel() -> TunnelMetadata {
++        TunnelMetadata {
++            interface: "lo".to_owned(),
++            dummy_dns: None,
++            ips: vec![
++                "10.64.0.2".parse().unwrap(),
++                "2001:db8:1::2".parse().unwrap(),
++            ],
++            ipv4_gateway: "10.64.0.1".parse().unwrap(),
++            ipv6_gateway: Some("2001:db8:1::1".parse().unwrap()),
++        }
++    }
++
++    /// Policies with both IPv4 and IPv6 addresses wherever a policy can carry them.
++    fn policies() -> Vec<FirewallPolicy> {
++        let peers = || vec![allowed("203.0.113.1:51820"), allowed("[2001:db8::1]:51820")];
++        vec![
++            FirewallPolicy::Connecting {
++                peer_endpoints: peers(),
++                tunnel: Some(tunnel()),
++                allow_lan: true,
++                allowed_endpoint: allowed("[2001:db8::2]:443"),
++                allowed_tunnel_traffic: AllowedTunnelTraffic::All,
++            },
++            FirewallPolicy::Connecting {
++                peer_endpoints: peers(),
++                tunnel: Some(tunnel()),
++                allow_lan: true,
++                allowed_endpoint: allowed("203.0.113.2:443"),
++                allowed_tunnel_traffic: AllowedTunnelTraffic::One(
++                    allowed("[2001:db8::3]:53").endpoint,
++                ),
++            },
++            FirewallPolicy::Connected {
++                peer_endpoints: peers(),
++                tunnel: tunnel(),
++                allow_lan: true,
++                dns_config: DnsConfig::from_addresses(
++                    &[
++                        "10.64.0.1".parse().unwrap(),
++                        "2001:db8:1::1".parse().unwrap(),
++                    ],
++                    &["192.168.1.1".parse().unwrap(), "fe80::1".parse().unwrap()],
++                )
++                .resolve(&[]),
++            },
++            FirewallPolicy::Blocked {
++                allow_lan: true,
++                allowed_endpoint: Some(allowed("[2001:db8::2]:443")),
++            },
++            FirewallPolicy::Disconnecting { allow_lan: true },
++        ]
++    }
++
++    /// Builds the rules for every policy in [`policies`] and returns how many IPv6-specific
++    /// matches there were.
++    fn ipv6_matches_in_policies(table_family: ProtoFamily) -> usize {
++        let table = Table::new(TABLE_NAME, table_family);
++        let firewall = Firewall {
++            fwmark: 0x6d6f6c65,
++            excluded_cgroup2: None,
++            net_cls: None,
++            table_family,
++        };
++        let mut ipv6_matches = 0;
++        for policy in policies() {
++            let batch = PolicyBatch::new(&table)
++                .finalize(&policy, &firewall)
++                .unwrap_or_else(|error| panic!("{policy}: {error}"));
++            let rules = rules(&batch);
++            assert!(!rules.is_empty(), "{policy}: no rules");
++            ipv6_matches += count_ipv6_matches(&rules);
++        }
++        ipv6_matches
++    }
++
++    /// Makes sure the policies exercise IPv6 at all, so that [`ip_table_has_no_ipv6_matches`]
++    /// means something.
++    #[test]
++    fn inet_table_has_ipv6_matches() {
++        assert!(ipv6_matches_in_policies(ProtoFamily::Inet) > 0);
++    }
++
++    /// The `ip` table, used when the kernel has no IPv6 support, must not contain IPv6 rules at
++    /// all: they could never match, and `nft` cannot display them.
++    #[test]
++    fn ip_table_has_no_ipv6_matches() {
++        assert_eq!(ipv6_matches_in_policies(ProtoFamily::Ipv4), 0);
++    }
++}
