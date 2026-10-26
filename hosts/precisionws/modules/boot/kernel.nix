@@ -161,6 +161,11 @@
       "hash_pointers=always"
       "iommu=force"
       "tsx=off"
+
+      # As on whitey: without net_cls in cgroup v1, Mullvad matches excluded apps by cgroup v2, the path that
+      # works with this kernel and its IPv4-only firewall patch. With net_cls mounted it took the v1 path, and
+      # its firewall failed to load ("Operation not supported", 2026-10-26).
+      "cgroup_no_v1=net_cls"
     ];
 
     kernelPatches = [];
