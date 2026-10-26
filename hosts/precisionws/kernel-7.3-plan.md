@@ -25,6 +25,11 @@ signed by the host's MOK key, so that both mean what they say.
   (`nv-kernel.o_binary`), which is not built with kCFI, so calls between it and the kernel could trap.
 - **`TRIM_UNUSED_KSYMS` off on precisionws.** It drops exported symbols no in-tree module uses, which NVIDIA's modules
   need.
+- **`nosmt` stays** (the maintainer, 2026-10-26). This CPU is not affected by the vulnerabilities `nosmt` answers
+  (L1TF, MDS, TAA, MMIO stale data; `/sys/devices/system/cpu/vulnerabilities`), so `mitigations=auto,nosmt` alone
+  would leave SMT on; `nosmt` keeps it off regardless, against cross-thread timing channels no patch removes
+  (port contention) and flaws not yet found. The cost: the 8 P-cores' second threads, about 10% on fully parallel
+  work by estimate (the 16 E-cores have none), nothing on light work.
 - Settled by whitey's precedent: FIPS mode on (iwlwifi takes mac80211's software crypto; whitey's trouble was
   ath12k's `SW_CRYPTO_CONTROL`); IPv6 off (whitey's Mullvad patch is already staged in `overlays/`); hibernation off
   (lockdown forbids it; suspend to RAM is unaffected).
