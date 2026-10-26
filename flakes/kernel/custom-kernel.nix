@@ -24,6 +24,10 @@ let
   kmodigestCat = "sed 's/$/\\.cer/' modules.order | xargs -d'\\n' cat > modules.cer";
   kmodigestRm = "sed 's/$/\\.cer/' modules.order | xargs -d'\\n' rm";
 
+  # The kept-files list in nixpkgs' postInstall, and the same list with the signing certificate.
+  keepConfig = "  \"$buildRoot/.config\"\n";
+  keepConfigAndCert = keepConfig + "  \"$buildRoot/certs/signing_key.x509\"\n";
+
   # What NixOS modules ask of a kernel (kernel.features): a stock nixpkgs kernel declares these, and
   # linuxManualConfig leaves them empty, so they are read from the config itself. graphics.nix asserts
   # ia32Emulation for hardware.graphics.enable32Bit; the iptables firewall reads netfilterRPFilter.
@@ -59,18 +63,40 @@ let
   hardenedKernel = manual.overrideAttrs (old: {
     makeFlags = dropKmodigest old.makeFlags;
 
+    # Two changes to nixpkgs' postInstall. The kmodigest step goes (above). And the dev output keeps the signing
+    # certificate, certs/signing_key.x509: kbuild's modules_install signs an out-of-tree module (NVIDIA's) with
+    # CONFIG_MODULE_SIG_KEY and that certificate, and without it sign-file fails, which kbuild does not treat as
+    # fatal, so the module installs unsigned. The certificate is public; the kernel embeds it.
     postInstall =
-      if lib.hasInfix kmodigestCat old.postInstall && lib.hasInfix kmodigestRm old.postInstall then
-        lib.replaceStrings [ kmodigestCat kmodigestRm ] [ ": > modules.cer" ":" ] old.postInstall
+      if lib.hasInfix kmodigestCat old.postInstall && lib.hasInfix kmodigestRm old.postInstall
+         && lib.hasInfix keepConfig old.postInstall then
+        lib.replaceStrings [ kmodigestCat kmodigestRm keepConfig ] [ ": > modules.cer" ":" keepConfigAndCert ]
+          old.postInstall
       else
-        throw "custom-kernel.nix: nixpkgs' kernel postInstall no longer matches the kmodigest step this overlay removes; revisit it";
+        throw "custom-kernel.nix: nixpkgs' kernel postInstall no longer matches what this overlay changes (the kmodigest step, the kept .config); revisit it";
 
     # Out-of-tree modules build with these flags too.
     passthru = old.passthru // {
       commonMakeFlags = dropKmodigest old.passthru.commonMakeFlags;
+      # Every module this kernel loads must carry a signature by the host's key (MODULE_SIG_FORCE);
+      # flakes/modules/kernel-module-signatures.nix checks it for the whole system.
+      signsWithHostKey = true;
     };
   });
+  # nixpkgs' module aggregation (the system's modules tree) merges each out-of-tree module's kmodigest certificate,
+  # <module>.ko.cer, into modules.cer. Modules signed by kbuild with the host's key have none, so for NVIDIA's the
+  # merge's cat fails the build. The merge goes; modules.cer stays the kernel's (empty, above).
+  mergeExternalCerts = "| xargs -d'\\n' cat >> modules.cer";
 in
 {
   hardened_linux_kernel = prev.linuxPackagesFor hardenedKernel;
+
+  aggregateModules = modules:
+    (prev.aggregateModules modules).overrideAttrs (old: {
+      postBuild =
+        if lib.hasInfix mergeExternalCerts old.postBuild then
+          lib.replaceStrings [ mergeExternalCerts ] [ "| cat > /dev/null" ] old.postBuild
+        else
+          throw "custom-kernel.nix: nixpkgs' aggregateModules no longer merges kmodigest certificates as this overlay expects; revisit it";
+    });
 }
