@@ -180,19 +180,3 @@ table ip mytable {
       oifname "docker0" drop
     }
 }
-table ip6 filter {
-    chain input {
-        type filter hook input priority filter; policy drop;
-        ip6 daddr ::/0 drop
-    }
-
-    chain output {
-        type filter hook output priority filter; policy drop;
-        ip6 saddr ::/0 drop
-    }
-
-    chain forward {
-        type filter hook forward priority filter; policy drop;
-        ip6 daddr ::/0 drop
-    }
-}

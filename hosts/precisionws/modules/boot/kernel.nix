@@ -10,8 +10,11 @@
     #   "trusted"
     # ];
 
-    # kernelPackages = pkgs.hardened_linux_kernel;
-    kernelPackages = pkgs.linuxPackages_latest;
+    # Custom clang-built kernel: the shared flakes/kernel/custom-kernel.nix,
+    # config in overlays/.config (from whitey's defconfig and
+    # overlays/kernel.fragment), tracked version in ../../kernel-version.nix.
+    # Stock fallback: pkgs.linuxPackages_latest
+    kernelPackages = pkgs.hardened_linux_kernel;
 
     binfmt = {
       emulatedSystems = [ "aarch64-linux" ];
@@ -30,11 +33,8 @@
         "dm-crypt"
         "dm-mod"
 
-
         "nls_cp437"
         "nls_iso8859_1"
-        "cryptd"
-        "vmd"
         "cbc"
 
         # Keyboard stack (early boot / initrd)
@@ -62,13 +62,11 @@
         # Storage
         "nvme"           # NVME drive support
         "nvme_core"
-        "nvme_auth"
         "raid0"          # Software RAID0 via mdadm
         "usb_storage"    # Generic USB storage support
         "scsi_mod"
         "scsi_common"
         "libata"
-        "dax"
         "md_mod"
 
         # Hardware support
@@ -93,8 +91,6 @@
         cryptoModules = [
           "aesni-intel"
           "cbc"
-          "cryptd"
-          "crypto_null"
           "essiv"
           "gf128mul"
           "xts"
@@ -117,6 +113,7 @@
       # NVIDIA open modules — loaded after boot, not in initrd
       "nvidia"
       "nvidia_uvm"
+      "pkcs8_key_parser" # Lets the kernel keyring take PKCS#8 private keys (keyctl padd asymmetric); never loaded on demand
     ];
 
     extraModulePackages = [ ];
@@ -144,7 +141,6 @@
       "printk.time=1"
       "rootfstype=f2fs"
       "seccomp=1"
-      "unprivileged_userns_clone=1"
       "usbcore.autosuspend=-1"
       "vsyscall=none"
       "xe.disable_power_well=0"
@@ -156,9 +152,14 @@
       "xe.enable_psr=0"
       "xe.enable_sagv=0"
       "xe.force_probe=a788"
-      "zswap.compressor=zstd"
+      "zswap.compressor=lzo"
       "zswap.enabled=1"
       "zswap.max_pool_percent=10"
+
+      # Hardening (kernel-hardening-checker), as on whitey
+      "page_alloc.shuffle=1"
+      "hash_pointers=always"
+      "iommu=force"
     ];
 
     kernelPatches = [];
@@ -167,9 +168,29 @@
       # Enable certain network operations inside rootless containers.
       "net.ipv4.ip_unprivileged_port_start" = 0;
       "net.ipv4.ping_group_range" = "0 2147483647";
-      "kernel.unprivileged_userns_clone" = 1;
+
+      # Hardening (kernel-hardening-checker), as on whitey
+      "kernel.kptr_restrict" = 2;            # hides kernel addresses from root too; perf/bpftrace
+                                             # symbolization needs 1 (sysctl -w) while tracing
+      "dev.tty.ldisc_autoload" = 0;
+      "fs.protected_fifos" = 2;
+      "fs.protected_regular" = 2;
+      "fs.suid_dumpable" = 0;
+      "net.ipv4.conf.all.accept_redirects" = 0;
+      "net.ipv4.conf.default.accept_redirects" = 0;
+      "net.core.bpf_jit_harden" = 2;
+      "kernel.oops_limit" = 100;
+      "kernel.warn_limit" = 100;
+      "kernel.io_uring_disabled" = 1;        # root and kernel.io_uring_group members only
+
+      # The kernel is built without IPv6, so these keys don't exist.
+      "net.ipv6.conf.all.disable_ipv6" = lib.mkForce null;
+      "net.ipv6.conf.default.disable_ipv6" = lib.mkForce null;
+      "net.ipv6.conf.default.use_tempaddr" = lib.mkForce null;
     };
   };
+
+  networking.enableIPv6 = false;
 
   hardware = {
     cpu.intel.updateMicrocode = true;

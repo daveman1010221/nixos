@@ -1,6 +1,6 @@
 # precisionws: a hardened, clang-built Linux 7.3, matching whitey's
 
-Status, 2026-10-26: cleared by the maintainer; steps 1 and 2 done. Written from a comparison of whitey's 7.3 config
+Status, 2026-10-26: cleared by the maintainer; steps 1, 2 and 5 done, not yet built (steps 3, 4, 6 need /boot mounted). Written from a comparison of whitey's 7.3 config
 (`hosts/whitey/overlays/.config`) with the one this host last built (`hosts/precisionws/overlays/.config`, Linux 6.19.8),
 the 283 modules loaded here on the stock 7.2.9, `lspci -nnk`, and the 7.3 source's Kconfig files and Makefiles.
 
@@ -100,6 +100,17 @@ and warn limits of 100. This host's own parameters stay (`nosmt`, `intel_iommu=o
    keyboard stack above all); `pkcs8_key_parser` in `boot.kernelModules` (whitey `9427dce`; Polar's escrow keys go into
    the kernel keyring); whitey's parameters and sysctls; IPv6 off (`networking.enableIPv6 = false`, the `ip6` table out
    of `nftables.nft`, the Mullvad overlay).
+   *Done 2026-10-26, not yet built:* `kernel.nix` points `kernelPackages` at `pkgs.hardened_linux_kernel`; the initrd
+   list loses what this config does not build (`cryptd`, `vmd`, `nvme_auth`, `dax`; `cryptd` and `crypto_null` from
+   the LUKS list), and the keyboard stack (`i8042`, `usbhid`, `hid_generic`, `xhci_hcd`, `xhci_pci`) is built in, so
+   it cannot go missing from the initrd; `pkcs8_key_parser` in `boot.kernelModules`; whitey's three hardening
+   parameters and its sysctls; `unprivileged_userns_clone` dropped from the parameters and sysctls, as on whitey (a
+   Debian patch, nothing on this kernel); `zswap.compressor=lzo`, as on whitey, since this config builds no zstd for
+   the crypto API; `networking.enableIPv6 = false` and the `ip6` table out of `nftables.nft` (checked with
+   `nft -c`). The shared overlay now declares the kernel's `features` from its config (`linuxManualConfig` left them
+   empty, and `hardware.graphics.enable32Bit` asserts `ia32Emulation`); whitey's kernel derivation is unchanged by
+   it. The system evaluates (`toplevel`, with placeholder secrets). The flake reads the working tree, so the next
+   `nixos_update` builds and installs this kernel: not before step 6.
 6. **Build and check without booting:** the kernel, the initrd (every keyboard and storage module present and
    signed), NVIDIA, and the system's `toplevel`.
 7. **The first boot, with the 7.2.9 generation one menu entry away:** the keyboard at the passphrase prompt, the
