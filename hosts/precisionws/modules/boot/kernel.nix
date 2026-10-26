@@ -130,18 +130,15 @@
       "iommu.strict=1"
       "lockdown=confidentiality"
       "log_buf_len=8M"
-      "loglevel=6"
-      "lsm=landlock,yama,bpf"
-      "mitigations=auto"
+      # loglevel, lsm, pcie_aspm and usbcore.autosuspend come from the shared block in flake.nix.
+      "mitigations=auto,nosmt"            # the form kernel-hardening-checker reads
+      "nosmt"                             # SMT off whatever the CPU; auto,nosmt only where it is vulnerable
       "module.sig_enforce=1"
-      "nosmt"
       "nvme_core.default_ps_max_latency_us=0"
       "pci=realloc"
-      "pcie_aspm=on"
       "printk.time=1"
       "rootfstype=f2fs"
       "seccomp=1"
-      "usbcore.autosuspend=-1"
       "vsyscall=none"
       "xe.disable_power_well=0"
       "xe.enable_dc=0"
@@ -152,7 +149,7 @@
       "xe.enable_psr=0"
       "xe.enable_sagv=0"
       "xe.force_probe=a788"
-      "zswap.compressor=lzo"
+      "zswap.compressor=zstd"             # the config builds CRYPTO_ZSTD for it
       "zswap.enabled=1"
       "zswap.max_pool_percent=10"
 
@@ -160,6 +157,7 @@
       "page_alloc.shuffle=1"
       "hash_pointers=always"
       "iommu=force"
+      "tsx=off"
     ];
 
     kernelPatches = [];
@@ -181,7 +179,9 @@
       "net.core.bpf_jit_harden" = 2;
       "kernel.oops_limit" = 100;
       "kernel.warn_limit" = 100;
-      "kernel.io_uring_disabled" = 1;        # root and kernel.io_uring_group members only
+      "kernel.io_uring_disabled" = 2;        # off entirely (whitey: 1, root and the io_uring group)
+      "kernel.unprivileged_bpf_disabled" = 1; # off for good, not only until root turns it back on
+      "kernel.sysrq" = 0;                    # no magic SysRq (NixOS default 16, sync only)
 
       # The kernel is built without IPv6, so these keys don't exist.
       "net.ipv6.conf.all.disable_ipv6" = lib.mkForce null;

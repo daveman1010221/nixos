@@ -92,6 +92,29 @@ and warn limits of 100. This host's own parameters stay (`nosmt`, `intel_iommu=o
    (its kernel derivation is unchanged, and so is whitey's).
    For step 5, from this: the initrd list asks for `cryptd` and `nvme_auth`, which this config does not build, so
    they come out of it; the ruleset's `table ip6 filter` comes out (no IPv6), the rest is `table ip`.
+   *Corrected 2026-10-26 (review of the above):* checking only against `lsmod` missed what the stock kernel builds in.
+   The drivers bound in `/sys/bus/*/drivers`, `/sys/class/iommu` and `cpuidle` showed the config lacked the Intel IOMMU
+   (`INTEL_IOMMU`, `DMAR_TABLE`, `IRQ_REMAP`; `dmar0` and `dmar1` are active, and `intel_iommu=on`, `iommu.strict=1`,
+   `iommu=force` need it), `INTEL_IDLE` (the cpuidle driver), `X86_INTEL_LPSS` with the DesignWare I2C (the touchpad's
+   bus), PCIe hotplug and AER (`pciehp` and `aer` are bound), `INTEL_HFI_THERMAL`, `INTEL_TURBO_MAX_3` and `ACPI_DPTF`;
+   and that `xt_comment` was not built after all (it depends on `NETFILTER_ADVANCED`, off on whitey; with the cluster up
+   it is loaded). All are in the fragment now; `NETFILTER_ADVANCED=y` comes with every netfilter option it would
+   otherwise change pinned (nothing moved), `CRYPTO_ZSTD` for zswap, and the AMD-only drivers off. The firmware flash
+   stays out as decided above. Checked: every fragment line holds; every bound driver and every module loaded with the
+   cluster up is built or left out on purpose; every initrd module exists; the build reads exactly `overlays/.config`;
+   whitey's kernel derivation is unchanged.
+
+   kernel-hardening-checker, with the configured parameters and sysctls over the running system's: 296 OK, 56 FAIL
+   (from 273 and 79). Taken from it: `mitigations=auto,nosmt` (with `nosmt` kept: it disables SMT whatever the CPU),
+   `tsx=off`, `X86_INTEL_TSX_MODE_OFF`, `INTEL_IOMMU_SVM`; and, chosen by the maintainer,
+   `kernel.unprivileged_bpf_disabled=1`, `kernel.sysrq=0`, `kernel.io_uring_disabled=2` (`yama.ptrace_scope` stays
+   1). The 56 left: 33 this workstation uses, as whitey does (user namespaces, modules, BPF, tracing, compat and IA32
+   for Wine and 32-bit graphics, binfmt_misc for aarch64 emulation, MSR, the console); 5 the NVIDIA decisions; 13 not
+   applicable (clang, no SELinux, no IPv6, no TPM, not in 7.3, unreadable to the checker); 4 not appropriate
+   (`STATIC_USERMODEHELPER` and `PROC_MEM_NO_FORCE`/`proc_mem.force_override` break modprobe and debuggers; `pti` costs
+   on a CPU without Meltdown); `perf_event_paranoid=3` does nothing on a mainline kernel. Also in `kernel.nix`: zswap
+   back to `zstd`, and this host's copies of `loglevel`, `lsm`, `pcie_aspm` and `usbcore.autosuspend` removed, since
+   the shared block in `flake.nix` passes them (its `loglevel=4` already won over `loglevel=6`).
 3. **The MOK key.** `kmok_check` on `/boot/secrets/MOK.pem` and `MOK.priv` with `/boot` mounted; `kmok_generate` if
    precisionws has none.
 4. **NVIDIA** builds through kbuild against the custom kernel's `dev` output and is signed with the same key (whitey's
