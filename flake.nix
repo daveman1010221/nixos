@@ -363,9 +363,15 @@
                   "nushell/config.nu".text = builtins.readFile ./shell/nushell/config.nu;
                 }
                 {
+                  # The nftables firewall driver, as netavark is patched to build an `ip` table on a kernel without IPv6
+                  # (hosts/*/overlays/netavark-nftables-without-ipv6.nix); its iptables driver needs xt_nat, which these
+                  # kernels do not build.
                   "containers/containers.conf".text = lib.mkForce ''
                     [engine]
                     runtime = "runc"
+
+                    [network]
+                    firewall_driver = "nftables"
                   '';
                 }
               ];
