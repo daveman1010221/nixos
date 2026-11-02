@@ -76,7 +76,8 @@ in
 
     serviceConfig = {
       Type = "oneshot";
-      TimeoutStartSec = "60";
+      # The start includes waiting for the passphrase to be typed, so it is not short.
+      TimeoutStartSec = "180";
 
       # Early-boot hygiene and make sure nvme-cli can get a TTY
       StandardInput  = "null";
@@ -135,8 +136,9 @@ in
       ${modprobe} -ab xts aesni_intel gf128mul crypto_simd sha256 essiv || true
       ${modprobe} -ab dm_crypt || true
 
-      # Be explicit: don’t proceed until udev finished creating nodes we care about
-      ${pkgs.systemd}/bin/udevadm settle || true
+      # No `udevadm settle` before the prompt: it waits for every device udev knows of, and one USB device that never
+      # enumerates (a wedged Solo 2 on 2026-10-25 and 2026-11-02) kept it waiting past the timeout, the prompt never
+      # came. The loop below waits for the one device this needs, which udev brings up on its own meanwhile.
 
       nvme_bin="${nvme}"   # binary path provided by Nix
       [ -x "$nvme_bin" ] || { echo "[nvme-hw-key] nvme-cli missing in initrd"; fail_banner; exit 1; }
@@ -144,14 +146,15 @@ in
       # Resolve the token device from a by-* glob at *runtime* (no build-time expansion).
       SECRETS_GLOB='${secretsDev}'
       NODE=""
-      for i in $(seq 1 30); do
+      # Up to 30 s for it to appear.
+      for i in $(seq 1 120); do
         # Use absolute ls and `--` to avoid oddities if the glob starts with '-'
         NODE="$(${pkgs.coreutils}/bin/ls -1 -- $SECRETS_GLOB 2>/dev/null | head -n1 || true)"
         if [ -n "$NODE" ] && [ -e "$NODE" ]; then
           break
         fi
-        printf '[nvme-hw-key] waiting for "%s" …\n' "$SECRETS_GLOB"
-        ${pkgs.systemd}/bin/udevadm settle || true
+        # Once a second, not four times.
+        if [ $((i % 4)) -eq 1 ]; then printf '[nvme-hw-key] waiting for "%s" …\n' "$SECRETS_GLOB"; fi
         sleep 0.25
       done
       if [ -z "$NODE" ] || [ ! -e "$NODE" ]; then
@@ -310,8 +313,9 @@ in
       "$nvme_bin" sed discover ${nvme1} || true
       unset pass PW || true
 
-      # Let udev/LVM notice the now-unlocked namespaces before root discovery
-      ${pkgs.systemd}/bin/udevadm settle || true
+      # Let udev/LVM notice the now-unlocked namespaces before root discovery. Bounded, like the one below: a USB
+      # device that never enumerates would keep a plain settle waiting past the timeout (see the prompt above).
+      ${pkgs.systemd}/bin/udevadm settle --timeout=10 || true
 
       # Quick verification that both are unlocked
       for dev in ${nvme0} ${nvme1}; do
@@ -341,7 +345,7 @@ in
       ${mdadmBin} --assemble --scan || true
       ${lvmBin} vgchange -ay || true
 
-      ${pkgs.systemd}/bin/udevadm settle || true
+      ${pkgs.systemd}/bin/udevadm settle --timeout=10 || true
     '';
   };
 
