@@ -87,7 +87,8 @@ in
       UMask = "0077";  # keep any temp copies/dirs locked down
     };
     unitConfig.FailureAction = "none";
-    unitConfig.OnFailure = [ "nvme-hw-key-diag.service" "emergency.target" ];
+    # initrd-diag also runs for emergency.target; naming it here keeps it first in line.
+    unitConfig.OnFailure = [ "initrd-diag.service" "emergency.target" ];
 
     script = ''
       #!${pkgs.bash}/bin/bash
@@ -350,20 +351,27 @@ in
   };
 
   # ────────────────────────────────────────────────────────────────
-  # When nvme-hw-key fails or times out, save what udev and the kernel
-  # were doing to /boot (on the Keypad200, writable before the NVMe drives
-  # unlock), so an intermittent cold-boot hang leaves evidence behind.
-  # It only reads state, and never looks at the keys staged in ${mountPoint}.
+  # When the initrd fails, save what systemd, udev and the kernel were
+  # doing to /boot (on the Keypad200, writable before the NVMe drives
+  # unlock), so a boot that never reaches the system leaves evidence.
+  #
+  # It runs on the way to the emergency shell, however the initrd got
+  # there: nvme-hw-key failing or timing out (its OnFailure), a root or
+  # RAID/LVM device that never shows up, an fsck that fails. It only
+  # reads state, and never looks at the keys staged in ${mountPoint}.
+  # Each capture is a new /boot/hang-<time>/; what a section writes is
+  # synced before the next starts, so resetting partway keeps it.
   # ────────────────────────────────────────────────────────────────
-  boot.initrd.systemd.services.nvme-hw-key-diag =
+  boot.initrd.systemd.services.initrd-diag =
     let
       sd       = config.boot.initrd.systemd.package;   # the initrd's own journalctl/udevadm/systemctl
       cu       = "${pkgs.coreutils}/bin";
       bootDev  = (config.fileSystems."/boot" or { device = ""; }).device;
-      diagRoot = "/run/nvme-hw-key-diag";
+      diagRoot = "/run/initrd-diag";
     in {
-      description = "Save diagnostics after nvme-hw-key fails (stage-1)";
+      description = "Save diagnostics when the initrd fails (stage-1)";
       unitConfig.DefaultDependencies = false;
+      wantedBy = [ "emergency.target" ];
       # Run before the emergency shell takes the console.
       before = [ "emergency.service" ];
 
@@ -376,21 +384,41 @@ in
 
       script = ''
         set -u
-        echo "[nvme-hw-key-diag] nvme-hw-key failed; saving diagnostics to /boot"
+        echo "[initrd-diag] the initrd failed; saving diagnostics to /boot, about 20 s: do not reset yet"
         ${cu}/mkdir -p ${diagRoot}
         if ! ${pkgs.util-linux}/bin/mountpoint -q ${diagRoot}; then
           ${pkgs.util-linux}/bin/mount -t ext4 "${bootDev}" ${diagRoot} || {
-            echo "[nvme-hw-key-diag] could not mount ${bootDev}; nothing saved"; exit 0; }
+            echo "[initrd-diag] could not mount ${bootDev}; nothing saved"; exit 0; }
         fi
         D="${diagRoot}/hang-$(${cu}/date +%Y%m%d-%H%M%S)"
         ${cu}/mkdir -p "$D"
+        # udevadm talks to udevd, which may be the thing that is stuck.
+        ua() { ${cu}/timeout 5 ${sd}/bin/udevadm "$@"; }
+        saved() { ${cu}/sync; echo "[initrd-diag] saved: $*"; }
 
+        # What failed, and what was still waiting.
         ${cu}/cat /proc/uptime /proc/loadavg > "$D/uptime.txt" 2>&1
-        ${sd}/bin/journalctl -b -o short-monotonic --no-pager > "$D/journal.txt" 2>&1
+        ${sd}/bin/systemctl --failed --no-pager > "$D/failed.txt" 2>&1
         ${sd}/bin/systemctl list-jobs --no-pager > "$D/jobs.txt" 2>&1
-        ${sd}/bin/systemctl status systemd-udevd nvme-hw-key --no-pager -l > "$D/status.txt" 2>&1
+        failed_units="$(${sd}/bin/systemctl list-units --state=failed --plain --no-legend --no-pager \
+          | ${pkgs.gawk}/bin/awk '{print $1}')"
+        # One unit name per word.
+        ${sd}/bin/systemctl status $failed_units systemd-udevd --no-pager -l > "$D/status.txt" 2>&1
+        ${sd}/bin/journalctl -b -o short-monotonic --no-pager > "$D/journal.txt" 2>&1
+        saved "failed units, jobs, status, journal"
 
-        # Is the event queue moving? Two snapshots, five seconds apart.
+        # The devices: USB (a device that never enumerates stalls udev: the Solo 2 on 2026-10-25 and 2026-11-02),
+        # and block.
+        { for d in /sys/bus/usb/devices/*; do
+            [ -r "$d/idVendor" ] || continue
+            printf '%-14s %s:%s %6sM %s / %s\n' "''${d##*/}" "$(${cu}/cat "$d/idVendor")" "$(${cu}/cat "$d/idProduct")" \
+              "$(${cu}/cat "$d/speed" 2>/dev/null)" "$(${cu}/cat "$d/manufacturer" 2>/dev/null)" "$(${cu}/cat "$d/product" 2>/dev/null)"
+          done
+        } > "$D/usb.txt" 2>&1
+        { ${cu}/cat /proc/partitions; echo; ${pkgs.util-linux}/bin/lsblk -o NAME,TYPE,SIZE,FSTYPE,UUID 2>&1; } > "$D/block.txt"
+        saved "usb, block"
+
+        # Is udev's event queue moving? Two snapshots, five seconds apart.
         count_io_errors() {
           ${sd}/bin/journalctl -b -k --no-pager 2>/dev/null \
             | ${pkgs.gawk}/bin/awk 'tolower($0) ~ /i\/o error|buffer i\/o/ { n++ } END { print n + 0 }'
@@ -398,15 +426,12 @@ in
         for n in 1 2; do
           { echo "== snapshot $n at $(${cu}/cat /proc/uptime)"
             echo "queue file: $(${cu}/ls /run/udev/queue 2>&1)"
-            ${sd}/bin/udevadm control --ping 2>&1; echo "ping rc=$?"
+            ua control --ping 2>&1; echo "ping rc=$?"
             echo "I/O error lines so far: $(count_io_errors)"
           } >> "$D/progress.txt"
           [ "$n" = 1 ] && ${cu}/sleep 5
         done
-
-        # Ten seconds of block-device events, as the kernel sends them and as udev finishes them.
-        ${cu}/timeout 10 ${sd}/bin/udevadm monitor --kernel --udev --property --subsystem-match=block \
-          > "$D/monitor.txt" 2>&1
+        saved "udev queue snapshots"
 
         # Every process with its state and wait channel; kernel stacks of the udev and disk tools.
         for p in /proc/[0-9]*; do
@@ -418,26 +443,31 @@ in
         for p in /proc/[0-9]*; do
           c="$(${cu}/tr '\0' ' ' < "$p/cmdline" 2>/dev/null)"
           case "$c" in
-            *udev*|*blkid*|*mdadm*|*lvm*|*nvme*|*sed-key*)
+            *udev*|*blkid*|*mdadm*|*lvm*|*nvme*|*sed-key*|*cryptsetup*|*fsck*|*mount*)
               echo "== ''${p#/proc/} $c"; ${cu}/cat "$p/stack" 2>/dev/null ;;
           esac
         done > "$D/stacks.txt"
-
         # udevd's cgroups, including systemd 262's sibling 'workers' cgroup.
         ${pkgs.findutils}/bin/find /sys/fs/cgroup -path '*udev*' \( -name cgroup.procs -o -name cgroup.events \) 2>/dev/null \
           | while read -r f; do echo "== $f"; ${cu}/cat "$f"; done > "$D/cgroups.txt"
+        saved "processes, stacks, udev cgroups"
 
         # What udev knows about the NVMe drives, and their raw uevents.
         for d in /sys/block/nvme*; do
+          [ -e "$d" ] || continue
           n="''${d##*/}"
           { echo "== $d/uevent"; ${cu}/cat "$d/uevent"
-            echo "== udevadm info"; ${sd}/bin/udevadm info "/dev/$n"
+            echo "== udevadm info"; ua info "/dev/$n"
           } > "$D/info-$n.txt" 2>&1
         done
 
-        ${cu}/sync
-        echo "[nvme-hw-key-diag] saved to /boot/''${D##*/}"
+        # Ten seconds of block-device events, as the kernel sends them and as udev finishes them.
+        ${cu}/timeout 10 ${sd}/bin/udevadm monitor --kernel --udev --property --subsystem-match=block \
+          > "$D/monitor.txt" 2>&1
+        saved "nvme info, block events"
+
         ${pkgs.util-linux}/bin/umount ${diagRoot} || true
+        echo "[initrd-diag] all saved to /boot/''${D##*/}: safe to reset"
       '';
     };
 }
