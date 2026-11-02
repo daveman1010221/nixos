@@ -12,6 +12,11 @@ function claude_sync_pull --description "Bring Claude Code's sessions and memory
     rsync -a --update --backup --suffix=.before-pull --chmod=Du=rwx,Dgo=,Fu=rw,Fgo= -e "$ssh_cmd" $argv \
         "$remote/projects" "$HOME/.claude/"
     or return 1
+    # What transcripts refer to (long pastes, uploaded files), each file named by what it holds, so nothing needs a
+    # backup. --ignore-missing-args: a sync host pushed to before these were copied has neither.
+    rsync -a --update --ignore-missing-args --chmod=Du=rwx,Dgo=,Fu=rw,Fgo= -e "$ssh_cmd" $argv \
+        "$remote/paste-cache" "$remote/uploads" "$HOME/.claude/"
+    or return 1
     # This machine's settings stay its own: settings.json comes over only when there is none.
     rsync -a --ignore-existing --chmod=Fu=rw,Fgo= -e "$ssh_cmd" $argv "$remote/settings.json" "$HOME/.claude/settings.json"
     or return 1
