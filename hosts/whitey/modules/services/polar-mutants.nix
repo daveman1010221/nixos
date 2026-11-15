@@ -45,12 +45,20 @@ let
       git clone --quiet "$bundle" "$work"
       # Relative paths in the arguments (--out, --outcomes, --resume) land in $out, where User reads them.
       cd "$out"
-      nix develop "$work" --command sh -c '
-        work=$0; shift
-        env -u RUST_LOG CARGO_PROFILE_DEV_DEBUG=line-tables-only \
-          cargo build -q --manifest-path "$work/src/agents/Cargo.toml" -p polar-eden &&
-        "$work/src/agents/target/debug/polar-eden" collect --manifest-path "$work/src/agents/Cargo.toml" "$@"
-      ' "$work" "$@" 2>&1 | tee "$out/run.log"
+      nix develop "$work" --command ${collect}/bin/polar-mutants-collect "$work" "$@" 2>&1 | tee "$out/run.log"
+    '';
+  };
+
+  # Inside the clone's dev shell: build polar-eden there and run `collect` on
+  # that workspace. No runtimeInputs, so cargo and the toolchain are the dev shell's.
+  collect = pkgs.writeShellApplication {
+    name = "polar-mutants-collect";
+    runtimeInputs = [ ];
+    text = ''
+      work="''${1:?usage: polar-mutants-collect <workspace> <polar-eden collect args...>}"; shift
+      manifest="$work/src/agents/Cargo.toml"
+      env -u RUST_LOG CARGO_PROFILE_DEV_DEBUG=line-tables-only cargo build -q --manifest-path "$manifest" -p polar-eden
+      "$work/src/agents/target/debug/polar-eden" collect --manifest-path "$manifest" "$@"
     '';
   };
 
