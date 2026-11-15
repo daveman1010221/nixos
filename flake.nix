@@ -827,6 +827,9 @@
               pkgs.xdg-desktop-portal-cosmic
             ];
             xdg.portal.config.common.default = "*";
+            xdg.mime.defaultApplications = {
+              "image/svg+xml" = "librewolf.desktop";
+            };
 
             # System copy configuration
             system.copySystemConfiguration = false;

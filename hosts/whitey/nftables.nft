@@ -58,6 +58,18 @@ table ip mytable {
 
     chain output {
         type filter hook output priority filter; policy drop;
+
+        # polar-mutants (uid 1500) reaches loopback (its own test containers' ports; djshepard's local services
+        # there all want credentials it cannot read), DNS, and the internet on 80/443 (crates.io, GitHub, the Nix cache).
+        # Nothing on the LAN, the VPN, u7c's or podman's private ranges. Its rootless podman's traffic leaves through its
+        # own pasta process, so the same rules hold its containers.
+        meta skuid 1500 oifname "lo" accept
+        meta skuid 1500 udp dport 53 accept
+        meta skuid 1500 tcp dport 53 accept
+        meta skuid 1500 ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } counter drop
+        meta skuid 1500 tcp dport { 80, 443 } accept
+        meta skuid 1500 log prefix "MUTANTS-DROP: " level info counter drop
+
         ct state established,related accept
         udp dport { 53, 67, 68, 123 } accept
         oifname "wl*" ip daddr 224.0.0.251 udp dport 5353 accept comment "mDNS outbound"
