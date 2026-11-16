@@ -7,10 +7,10 @@
 # User's session, ~/.config, SSH agent, podman socket or kubeconfigs. Its
 # network is limited in nftables.nft (meta skuid 1500).
 #
-# Hand-off: User stages a git bundle in /var/lib/polar-mutants/exchange/in
+# Hand-off: User stages a git bundle in /home/polar-mutants/exchange/in
 # (`polar-mutants-stage`), then starts the run with `sudo -u polar-mutants
 # polar-mutants-run <name> -- <polar-eden collect args>`; results land in
-# /var/lib/polar-mutants/exchange/out/<name>. sudo resets the environment, so
+# /home/polar-mutants/exchange/out/<name>. sudo resets the environment, so
 # nothing of User's (KUBECONFIG, SSH_AUTH_SOCK, DOCKER_HOST) reaches the
 # run.
 { pkgs, ... }:
@@ -18,7 +18,7 @@ let
   # fixed: nftables matches it by number (names do not resolve in the ruleset
   # check's sandbox)
   uid = 1500;
-  home = "/var/lib/polar-mutants";
+  home = "/home/polar-mutants"; # /home: a run writes tens of GB; /tmp and /var are smaller and shared
   exchange = "${home}/exchange";
 
   # As polar-mutants: clone the staged bundle fresh, build polar-eden there,
@@ -38,6 +38,10 @@ let
       export XDG_RUNTIME_DIR=/run/user/${toString uid}
       export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
       export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock
+      # Everything a run makes (polar-eden's runner copies and overlays, builds) stays in its own home, never /tmp; what
+      # the last run left is cleared first.
+      export TMPDIR=$HOME/tmp
+      rm -rf "$TMPDIR"; mkdir -p "$TMPDIR"
       systemctl --user enable --now podman.socket >/dev/null
 
       bundle=${exchange}/in/$name.bundle
