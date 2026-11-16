@@ -33,6 +33,8 @@ let
       [ "$(id -u)" = "${toString uid}" ] || { echo "polar-mutants-run: run me as polar-mutants" >&2; exit 2; }
 
       export HOME=${home}
+      # sudo keeps the caller's directory, which polar-mutants may not be able to read (git clone fails there).
+      cd "$HOME"
       export XDG_RUNTIME_DIR=/run/user/${toString uid}
       export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
       export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock
@@ -113,7 +115,11 @@ in
     {
       users = [ "djshepard" ];
       runAs = "polar-mutants";
-      commands = [ { command = "${run}/bin/polar-mutants-run"; options = [ "NOPASSWD" ]; } ];
+      # sudo matches the path it resolves through PATH, the system profile's, as well as the store path itself.
+      commands = [
+        { command = "${run}/bin/polar-mutants-run"; options = [ "NOPASSWD" ]; }
+        { command = "/run/current-system/sw/bin/polar-mutants-run"; options = [ "NOPASSWD" ]; }
+      ];
     }
   ];
 
