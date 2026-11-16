@@ -39,14 +39,17 @@ let
       export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
       export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock
       # Everything a run makes (polar-eden's runner copies and overlays, builds) stays in its own home, never /tmp; what
-      # the last run left is cleared first.
+      # the last run left is cleared first. An overlay a stopped test left has a work directory the kernel made with no
+      # permissions, which rm cannot enter until it is given them.
       export TMPDIR=$HOME/tmp
+      chmod -R u+rwx "$TMPDIR" 2>/dev/null || true
       rm -rf "$TMPDIR"; mkdir -p "$TMPDIR"
       systemctl --user enable --now podman.socket >/dev/null
 
       bundle=${exchange}/in/$name.bundle
       work=${home}/work/$name
       out=${exchange}/out/$name
+      chmod -R u+rwx "$work" 2>/dev/null || true
       rm -rf "$work"; mkdir -p "$work" "$out"
       git clone --quiet "$bundle" "$work"
       # Relative paths in the arguments (--out, --outcomes, --resume) land in $out, where User reads them.
