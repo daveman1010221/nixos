@@ -68,6 +68,23 @@ let
     '';
   };
 
+  # As root, through sudo: stop a run outright. Every polar-mutants process is
+  # killed, wherever it runs (sudo starts a run in the caller's session; its test
+  # scopes run under polar-mutants's own manager), and that manager is started
+  # again, so the next run has its slices and scopes. No arguments; it touches
+  # nothing but polar-mutants.
+  stop = pkgs.writeShellApplication {
+    name = "polar-mutants-stop";
+    runtimeInputs = [ pkgs.procps pkgs.systemd ];
+    text = ''
+      [ "$(id -u)" = 0 ] || { echo "polar-mutants-stop: run me through sudo" >&2; exit 2; }
+      pkill -KILL -U polar-mutants || true
+      systemctl restart user@${toString uid}.service
+      left=$(pgrep -U polar-mutants -c -f 'polar-eden|cargo|rustc' || true)
+      echo "polar-mutants-stop: stopped; run processes left: ''${left:-0}"
+    '';
+  };
+
   # As User: stage a revision of the repository at the working directory for
   # polar-mutants to clone.
   stage = pkgs.writeShellApplication {
@@ -125,9 +142,19 @@ in
         { command = "/run/current-system/sw/bin/polar-mutants-run"; options = [ "NOPASSWD" ]; }
       ];
     }
+    # Stopping a run needs root, to start polar-mutants's manager again; the
+    # command is fixed and takes no arguments.
+    {
+      users = [ "djshepard" ];
+      runAs = "root";
+      commands = [
+        { command = "${stop}/bin/polar-mutants-stop"; options = [ "NOPASSWD" ]; }
+        { command = "/run/current-system/sw/bin/polar-mutants-stop"; options = [ "NOPASSWD" ]; }
+      ];
+    }
   ];
 
-  environment.systemPackages = [ run stage ];
+  environment.systemPackages = [ run stage stop ];
 
   # podman's log driver for the polar-mutants user, as User's (k8s-file;
   # journald made container tests time out).
