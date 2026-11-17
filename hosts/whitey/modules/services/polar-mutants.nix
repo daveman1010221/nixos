@@ -25,7 +25,7 @@ let
   # and run it under this user's own manager.
   run = pkgs.writeShellApplication {
     name = "polar-mutants-run";
-    runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.systemd pkgs.nix ];
+    runtimeInputs = [ pkgs.git pkgs.coreutils pkgs.systemd pkgs.nix pkgs.util-linux ];
     text = ''
       name="''${1:?usage: polar-mutants-run <name> -- <polar-eden collect args...>}"; shift
       [ "''${1:-}" = "--" ] && shift
@@ -33,6 +33,10 @@ let
       [ "$(id -u)" = "${toString uid}" ] || { echo "polar-mutants-run: run me as polar-mutants" >&2; exit 2; }
 
       export HOME=${home}
+      # One run at a time: each clears what the last left (its temporary files, every earlier run's clone and build),
+      # which would pull the ground from under a run still going.
+      exec 9>"$HOME/run.lock"
+      flock -n 9 || { echo "polar-mutants-run: another run is going; wait for it, or stop it with polar-mutants-stop" >&2; exit 2; }
       # sudo keeps the caller's directory, which polar-mutants may not be able to read (git clone fails there).
       cd "$HOME"
       export XDG_RUNTIME_DIR=/run/user/${toString uid}
@@ -49,8 +53,10 @@ let
       bundle=${exchange}/in/$name.bundle
       work=${home}/work/$name
       out=${exchange}/out/$name
-      chmod -R u+rwx "$work" 2>/dev/null || true
-      rm -rf "$work"; mkdir -p "$work" "$out"
+      # Every earlier run's clone and build (tens of GB each) is cleared, not only this name's: a run's results are in
+      # its out directory, and nothing reads its work directory once it ends.
+      chmod -R u+rwx ${home}/work 2>/dev/null || true
+      rm -rf ${home}/work; mkdir -p "$work" "$out"
       git clone --quiet "$bundle" "$work"
       # Relative paths in the arguments (--out, --outcomes, --resume) land in $out, where User reads them.
       cd "$out"
