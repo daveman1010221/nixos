@@ -38,6 +38,16 @@
         nixpkgs.follows = "nixpkgs";
       };
     };
+
+    # Secrets kept in the repo encrypted with age (rage): hosts/<host>/secrets.
+    ragenix = {
+      url = "github:yaxitech/ragenix";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        # its own pin is older than nixpkgs allows (stdenv.isLinux is gone)
+        rust-overlay.follows = "rust-overlay";
+      };
+    };
   };
 
   # The audit package needs an overlay to get the permissions right for
@@ -66,7 +76,7 @@
   #   });
   # })
 
-  outputs = { self, nixpkgs, rust-overlay, myNeovimOverlay, dotacatFast, secrets-empty, sed-key, git-hooks }:
+  outputs = { self, nixpkgs, rust-overlay, myNeovimOverlay, dotacatFast, secrets-empty, sed-key, git-hooks, ragenix }:
   let
     lib = nixpkgs.lib;
     system = "x86_64-linux";
@@ -253,6 +263,11 @@
         };
         modules = commonModules ++ [
           (hostDir + /hardware-configuration.nix)        # or hardware-configuration.nix
+
+          # age.secrets, decrypted at activation into /run/agenix; and the
+          # ragenix command, to edit them.
+          ragenix.nixosModules.default
+          { environment.systemPackages = [ ragenix.packages.${system}.default ]; }
 
           ({ config, lib, pkgs, ... }: let
 

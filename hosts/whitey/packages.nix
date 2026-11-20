@@ -212,6 +212,7 @@ in {
         pwgen
         pyenv
         radeontop
+        rage
         restic
         ripgrep
         ripgrep-all
