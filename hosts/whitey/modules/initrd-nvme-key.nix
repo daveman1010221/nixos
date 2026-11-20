@@ -144,6 +144,44 @@ in
       nvme_bin="${nvme}"   # binary path provided by Nix
       [ -x "$nvme_bin" ] || { echo "[nvme-hw-key] nvme-cli missing in initrd"; fail_banner; exit 1; }
 
+      # Return "no", "yes", or "unknown" for Locked: … (case/spacing tolerant)
+      locked_state() {
+        local dev="$1" out state
+        out="$("$nvme_bin" sed discover "$dev" 2>/dev/null || true)"
+        # Extract the value to the right of "Locked:" (any spacing), trim, lower-case
+        state="$(printf '%s\n' "$out" \
+          | ${awk} -F: '/^[[:space:]]*Locked[[:space:]]*/{
+                v=$2; gsub(/^[ \t]+|[ \t]+$/, "", v);
+                print tolower(v); exit
+            }')"
+        case "$state" in
+          yes|no) printf '%s\n' "$state" ;;
+          *)      printf '%s\n' "unknown"; echo "$out" >&2 ;;
+        esac
+      }
+
+      # A warm reboot can leave both drives unlocked: then there is nothing to unlock, no key to read and no passphrase
+      # to ask for, so nobody need be at the console. Wait briefly for both namespaces; if either is missing or locked,
+      # or its state cannot be read, go on as always and ask.
+      all_unlocked=yes
+      for dev in ${nvme0} ${nvme1}; do
+        for i in $(seq 1 40); do
+          [ -e "$dev" ] && break
+          sleep 0.25
+        done
+        if [ ! -e "$dev" ] || [ "$(locked_state "$dev" 2>/dev/null)" != "no" ]; then
+          all_unlocked=no
+          break
+        fi
+      done
+      if [ "$all_unlocked" = yes ]; then
+        echo "[nvme-hw-key] both drives already unlocked (a warm reboot): no passphrase needed"
+        ${mdadmBin} --assemble --scan || true
+        ${lvmBin} vgchange -ay || true
+        ${pkgs.systemd}/bin/udevadm settle --timeout=10 || true
+        exit 0
+      fi
+
       # Resolve the token device from a by-* glob at *runtime* (no build-time expansion).
       SECRETS_GLOB='${secretsDev}'
       NODE=""
@@ -218,22 +256,6 @@ in
         printf '%s\n' "$sn"
       }
       
-      # Return "no", "yes", or "unknown" for Locked: … (case/spacing tolerant)
-      locked_state() {
-        local dev="$1" out state
-        out="$("$nvme_bin" sed discover "$dev" 2>/dev/null || true)"
-        # Extract the value to the right of "Locked:" (any spacing), trim, lower-case
-        state="$(printf '%s\n' "$out" \
-          | ${awk} -F: '/^[[:space:]]*Locked[[:space:]]*/{
-                v=$2; gsub(/^[ \t]+|[ \t]+$/, "", v);
-                print tolower(v); exit
-            }')"
-        case "$state" in
-          yes|no) printf '%s\n' "$state" ;;
-          *)      printf '%s\n' "unknown"; echo "$out" >&2 ;;
-        esac
-      }
-
       # Iterate both placeholders (namespaces)
       for dev in ${nvme0} ${nvme1}; do
         if [ ! -e "$dev" ]; then
